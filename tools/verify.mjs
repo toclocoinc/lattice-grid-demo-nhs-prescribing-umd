@@ -711,6 +711,37 @@ try {
       'the tiles followed the month, and match a query run here',
       `${itemsTile && itemsTile.value}, expected ${otherTotals.items}`);
 
+    /* ---- a slow answer cannot overwrite a newer one ---- */
+
+    /*
+     * Deliberately raced. Asking for practices sends a totals statement the
+     * session has never seen, which takes seconds; going straight back to
+     * substances sends one it has, which is answered in the same tick. So the
+     * slow answer is guaranteed to arrive after the fast one, and the totals
+     * row must still describe the grid a reader is looking at.
+     */
+    const raced = await evaluate(`(async () => {
+      const d = window.__prescribingDemo;
+      d.controls.levelPicker.value = 'practice';
+      d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 300));
+      d.controls.levelPicker.value = 'substance';
+      d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 30000));
+      return {
+        level: d.view.level,
+        count: d.mainGrid.rows.count(),
+        pinned: d.mainGrid.getPinnedRows({ edge: 'bottom' })[0] || null,
+      };
+    })()`);
+    console.log(`  after a raced level change: ${raced.count} rows, totals row "${raced.pinned && raced.pinned.name}"`);
+    check(raced.level === 'substance', 'the raced level change landed on substances', raced.level);
+    check(!!raced.pinned && /chemical substances/i.test(raced.pinned.name),
+      'a slow answer for a level the reader has left cannot overwrite the totals row of the one they are on',
+      raced.pinned && raced.pinned.name);
+    check(!!raced.pinned && Number(raced.pinned.items) > 0,
+      'and the totals row still carries figures', raced.pinned && raced.pinned.items);
+
     /* ---- back to where the screenshot should be taken ---- */
 
     await evaluate(`(async () => {
