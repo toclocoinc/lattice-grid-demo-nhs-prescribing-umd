@@ -212,6 +212,14 @@ try {
   let consoleErrors = [];
   let pageErrors = [];
   let endpointRequests = [];
+  /*
+   * The grid's own diagnostics. It warns, once per key, when it is handed a
+   * configuration key it does not recognise, or asked for something it cannot
+   * do. Those come out as warnings rather than errors, so a check that only
+   * watches errors watches a page quietly doing nothing about half of what it
+   * asked for. This one watches them.
+   */
+  let latticeDiagnostics = [];
 
   socket.onmessage = (event) => {
     const message = JSON.parse(event.data);
@@ -222,8 +230,11 @@ try {
       else ok(message.result);
       return;
     }
-    if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') {
-      consoleErrors.push(message.params.args.map((a) => a.value ?? a.description ?? a.type).join(' '));
+    if (message.method === 'Runtime.consoleAPICalled'
+      && (message.params.type === 'error' || message.params.type === 'warning')) {
+      const text = message.params.args.map((a) => a.value ?? a.description ?? a.type).join(' ');
+      if (text.includes('[lattice]')) latticeDiagnostics.push(text);
+      else if (message.params.type === 'error') consoleErrors.push(text);
     }
     if (message.method === 'Runtime.exceptionThrown') {
       const details = message.params.exceptionDetails;
@@ -281,6 +292,7 @@ try {
     consoleErrors = [];
     pageErrors = [];
     endpointRequests = [];
+    latticeDiagnostics = [];
     console.log(`\n--- ${label} ---\n${url}`);
     await call('Page.navigate', { url });
     await waitFor('!!(window.__prescribingDemo && window.__prescribingDemo.ready_)', 150000, `${label} to settle`);
@@ -302,6 +314,8 @@ try {
     const bad = consoleErrors.filter((text) => !permitted(text));
     check(bad.length === 0, `${label}: no console errors`, bad.slice(0, 3).join(' | '));
     check(pageErrors.length === 0, `${label}: no page errors`, pageErrors.slice(0, 3).join(' | '));
+    check(latticeDiagnostics.length === 0, `${label}: the grid raised no diagnostics`,
+      latticeDiagnostics.slice(0, 3).join(' | '));
   };
 
   /** What the page is showing, and what it last sent. */

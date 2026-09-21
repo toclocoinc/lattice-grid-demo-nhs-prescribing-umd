@@ -517,7 +517,6 @@
       /* The saved copy is a memory source, so the grid has rows to paint
          before the first query has been sent. `goLive` replaces it. */
       source: { mode: 'memory', rows: snapshot.substances },
-      sort: [{ col: 'cost', dir: 'desc' }],
       /*
        * Find is off here on purpose. Over a windowed source it searches the
        * rows that happen to be loaded, and a search box on this page that
@@ -528,6 +527,10 @@
       find: false,
     }));
     built.mainGrid = mainGrid;
+    /* The opening order, set through the sort model rather than declared in
+       the configuration: `sort` is not a configuration key, and a grid handed
+       one says so and ignores it. Here it is also the opening ORDER BY. */
+    mainGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
 
     /** The caption under the grid's title: what a row is, and how many. */
     function drawGridCaption() {
@@ -584,7 +587,6 @@
         { id: 'items', field: 'items', title: 'Items, count', type: 'number' },
         { id: 'cost', field: 'cost', title: 'Actual cost, GBP', type: 'number' },
       ],
-      sort: [{ col: 'cost', dir: 'desc' }],
     }));
     const icbGrid = createGrid(el('div', 'grid-pane hidden-grid'), baseGridConfig('Care boards', {
       rowKey: 'id', statusBar: false,
@@ -593,7 +595,6 @@
         { id: 'items', field: 'items', title: 'Items, count', type: 'number' },
         { id: 'cost', field: 'cost', title: 'Actual cost, GBP', type: 'number' },
       ],
-      sort: [{ col: 'cost', dir: 'desc' }],
     }));
     const trendGrid = createGrid(el('div', 'grid-pane hidden-grid'), baseGridConfig('One substance over time', {
       rowKey: 'id', statusBar: false,
@@ -602,11 +603,15 @@
         { id: 'items', field: 'items', title: 'Items, count', type: 'number' },
         { id: 'cost', field: 'cost', title: 'Actual cost, GBP', type: 'number' },
       ],
-      sort: [{ col: 'month', dir: 'asc' }],
     }));
     built.chapterGrid = chapterGrid;
     built.icbGrid = icbGrid;
     built.trendGrid = trendGrid;
+    /* The order each chart draws in, through the sort model for the same
+       reason as above. */
+    chapterGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
+    icbGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
+    trendGrid.sort.set([{ col: 'month', dir: 'asc' }]);
 
     const chapterBox = el('div', 'chart-box tall');
     const icbBox = el('div', 'chart-box tall');
@@ -702,7 +707,15 @@
         x: 'month',
         y: 'cost',
         title: view.substance + ': actual cost by month',
-        axis: { x: { title: '' }, y: { title: moneyAxis } },
+        /*
+         * Bands, said out loud. The months come back as the text the publisher
+         * writes them in, and the grid rightly points out that text which
+         * reads as a date usually wants a continuous axis. Here it does not:
+         * there are exactly twenty four of them, one per month, none missing,
+         * so evenly spaced bands labelled as published are what a reader
+         * wants, and a continuous axis would only add ticks nobody asked for.
+         */
+        axis: { x: { title: '', scale: 'band' }, y: { title: moneyAxis } },
         scheme: 'colourblind',
         legend: false,
         tooltip: true,

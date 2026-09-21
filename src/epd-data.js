@@ -173,22 +173,22 @@
     {
       id: 'items', title: 'Items', unit: 'count', width: 118,
       expr: 'SUM(SAFE_CAST(ITEMS AS FLOAT64))',
-      format: { type: 'number', decimals: 0, thousands: true },
+      format: { type: 'number', decimals: 0, thousandsSeparator: true },
     },
     {
       id: 'cost', title: 'Actual cost', unit: 'GBP', width: 150,
       expr: 'SUM(SAFE_CAST(ACTUAL_COST AS FLOAT64))',
-      format: { type: 'number', decimals: 0, thousands: true },
+      format: { type: 'number', decimals: 0, thousandsSeparator: true },
     },
     {
       id: 'quantity', title: 'Total quantity', unit: 'count', width: 150,
       expr: 'SUM(SAFE_CAST(TOTAL_QUANTITY AS FLOAT64))',
-      format: { type: 'number', decimals: 0, thousands: true },
+      format: { type: 'number', decimals: 0, thousandsSeparator: true },
     },
     {
       id: 'costPerItem', title: 'Cost per item', unit: 'GBP', width: 138,
       expr: 'SAFE_DIVIDE(SUM(SAFE_CAST(ACTUAL_COST AS FLOAT64)), SUM(SAFE_CAST(ITEMS AS FLOAT64)))',
-      format: { type: 'number', decimals: 2, thousands: true },
+      format: { type: 'number', decimals: 2, thousandsSeparator: true },
     },
   ];
 
