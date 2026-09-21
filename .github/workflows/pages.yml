@@ -1,8 +1,8 @@
 name: Publish the demo
 
-# On demand only, for now. This repository is private, and GitHub Pages cannot
-# serve a private one, so a publish wired to every push would fail on every
-# push. Add `push: { branches: [main] }` back when the demo is made public.
+# On demand only, for now, so that pushing to this repository does not publish
+# anything by itself. Add `push: { branches: [main] }` when the demo is meant
+# to go live on every change.
 on:
   workflow_dispatch:
 

@@ -55,11 +55,14 @@ jobs:
       # A push made with GITHUB_TOKEN deliberately does not trigger other
       # workflows, which is GitHub's loop guard rather than a setting, so the
       # commit above would leave a published page serving yesterday's copy
-      # until something asked for a publish. This is that ask. It is skipped
-      # while the publish workflow is on demand only, which it is while this
-      # repository is private.
+      # until something asked for a publish. This is that ask.
+      #
+      # It waits to be switched on. Set the repository variable PUBLISH to
+      # `true` and the nightly refresh starts publishing; until then it
+      # rebuilds the saved copy and commits it, and nothing goes live without
+      # somebody deciding it should.
       - name: Publish the new copy
-        if: steps.commit.outputs.committed == 'true' && github.event.repository.private == false
+        if: steps.commit.outputs.committed == 'true' && vars.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref main
