@@ -62,7 +62,22 @@
         });
         return Promise.resolve(rows);
       }
-      if (inFlight.has(key)) return inFlight.get(key);
+      /*
+       * Two callers asking the identical question at the same moment share one
+       * request, but only when sharing cannot hurt them.
+       *
+       * A request carries the abort signal of the thing that asked for it. The
+       * grid supersedes its own fetches: it asks for a window, changes its
+       * mind, and asks for the same window again a beat later. Handing the
+       * second ask the first ask's promise means the first one's abort kills
+       * the second one too, and the grid is left with one page of rows, no
+       * total, and no error to show for it. So a request is shared only with a
+       * caller that brought no signal of its own, or the very same one.
+       */
+      const open = inFlight.get(key);
+      if (open && (!signal || open.signal === signal) && !(open.signal && open.signal.aborted)) {
+        return open.promise;
+      }
 
       /*
        * The log entry is made when the statement is QUEUED, not when it comes
@@ -81,15 +96,17 @@
       state.pending += 1;
       onQuery(entry);
 
-      const finish = (changes) => {
+      const finish = (changes, dropped) => {
         Object.assign(entry, changes, { status: 'done' });
         state.pending -= 1;
-        onQuery(entry);
+        onQuery(entry, dropped ? 'dropped' : 'done');
       };
 
       const work = queue.then(async () => {
         if (signal && signal.aborted) {
-          finish({ ms: 0, rows: 0, error: 'superseded before it was sent' });
+          /* Never sent. Not worth a line in a panel that is meant to show what
+             the page asked the endpoint. */
+          finish({ ms: 0, rows: 0, error: 'superseded before it was sent' }, true);
           throw new DOMException('aborted', 'AbortError');
         }
         const url = SQL_URL
@@ -106,9 +123,10 @@
              where the page was trying to go. */
           const ms = Date.now() - started;
           if (signal && signal.aborted) {
-            /* Superseded by a newer window. Not a failure, but the entry has
-               to be closed or the page would think it was still waiting. */
-            finish({ ms, rows: 0, error: 'superseded by a newer request' });
+            /* Superseded by a newer window. Not a failure, and not something a
+               reader needs to see, but the entry has to be closed or the page
+               would think it was still waiting. */
+            finish({ ms, rows: 0, error: 'superseded by a newer request' }, true);
             throw error;
           }
           state.failures += 1;
@@ -145,7 +163,7 @@
         return records;
       });
 
-      inFlight.set(key, work);
+      inFlight.set(key, { promise: work, signal: signal || null });
       /* The queue must advance whether this one worked or not, and it must not
          inherit the rejection: a failed query is the caller's to handle, not a
          reason for every later query to fail too. */

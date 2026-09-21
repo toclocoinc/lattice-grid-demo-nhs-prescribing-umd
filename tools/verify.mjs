@@ -306,7 +306,31 @@ try {
       if (value) return value;
       await sleep(250);
     }
-    throw new Error(`timed out waiting for ${what}`);
+    /* Say what the page was doing when the wait gave up. A bare timeout says
+       only that something did not happen, which is the least useful half. */
+    let context = '';
+    try {
+      context = await evaluate(`(() => {
+        const d = window.__prescribingDemo;
+        if (!d || !d.mainGrid) return 'the page has no dashboard';
+        const trend = d.charts.trend && d.charts.trend.data();
+        const series = (trend && trend.series) || [];
+        return JSON.stringify({
+          level: d.view.level, month: d.view.month, rows: d.mainGrid.rows.count(),
+          substance: d.view.substance,
+          picker: d.controls.substancePicker.value,
+          pickerOptions: d.controls.substancePicker.options.length,
+          pickerDisabled: d.controls.substancePicker.disabled,
+          trendChart: !!d.charts.trend,
+          trendFirstY: series[0] && series[0].points[0] ? series[0].points[0].y : null,
+          trendRows: d.trendGrid.rows.count(),
+          destroyed: !!d.mainGrid.destroyed, pending: d.pending(), error: d.lastError || null,
+          recent: (d.queries || []).slice(0, 5).map((q) => q.label + '/' + q.status + '/'
+            + String(q.sql).slice(0, 46)),
+        });
+      })()`);
+    } catch (error) { context = 'could not be read: ' + String(error && error.message); }
+    throw new Error(`timed out waiting for ${what}; the page was: ${context}`);
   };
 
   /**
@@ -953,6 +977,58 @@ try {
       d.mainGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
     })()`);
     await quiet(240000, 'the return to the opening view');
+    /* ---- every row a reader can see has something in it ---- */
+
+    /*
+     * Scroll deep and look at the cells.
+     *
+     * A windowed grid draws a row for every position whether or not its data
+     * has arrived, so "the grid painted rows" is not the same as "the rows
+     * have anything in them". Past the first window this page drew a viewport
+     * of empty rows: the answers had landed and the model held them, and the
+     * cells stayed blank. Nothing else in this file would have noticed, because
+     * everything else reads the model.
+     */
+    const blankRowsAt = async (row, label) => {
+      await evaluate(`(() => {
+        const viewport = document.querySelector('.primary-host .lat-body-viewport');
+        const d = window.__prescribingDemo;
+        viewport.scrollTop = Math.round(viewport.scrollHeight * ${row} / d.mainGrid.rows.count());
+        viewport.dispatchEvent(new Event('scroll', { bubbles: true }));
+      })()`);
+      await quiet(240000, `the scroll to row ${row}`);
+      const seen = await evaluate(`(() => {
+        const viewport = document.querySelector('.primary-host .lat-body-viewport');
+        const rows = [...viewport.querySelectorAll('.lat-row[data-index]')];
+        const blank = rows.filter((r) => [...r.querySelectorAll('[role="gridcell"]')]
+          .every((c) => c.textContent.trim() === ''));
+        return {
+          drawn: rows.length,
+          blank: blank.length,
+          indices: blank.slice(0, 5).map((r) => Number(r.getAttribute('data-index'))),
+          /* What the model holds for the first blank one, so a failure says
+             whether the data was missing or merely unpainted. */
+          modelHas: blank.length
+            ? (() => {
+              const i = Number(blank[0].getAttribute('data-index'));
+              const r = window.__prescribingDemo.mainGrid.rows.get(i);
+              return r && r.data ? String(r.data.name) : null;
+            })()
+            : null,
+        };
+      })()`);
+      console.log(`  at row ${row}: ${seen.drawn} rows drawn, ${seen.blank} blank`
+        + (seen.blank ? ` (indices ${seen.indices.join(', ')}; the model holds "${seen.modelHas}" for the first)` : ''));
+      check(seen.drawn > 0, `${label}: the grid drew rows`, `${seen.drawn}`);
+      check(seen.blank === 0, `${label}: every row a reader can see has its cells painted`,
+        `${seen.blank} of ${seen.drawn} blank; the model holds "${seen.modelHas}" for row ${seen.indices[0]}`);
+      return seen;
+    };
+
+    await blankRowsAt(550, 'scrolled to row 550');
+    await blankRowsAt(900, 'scrolled to row 900');
+    await blankRowsAt(300, 'scrolled back to row 300');
+
     await evaluate(`(() => {
       /* Back to the top, so the screenshot shows the grid as a reader meets it
          rather than where the paging check left it. */
@@ -960,6 +1036,7 @@ try {
       if (viewport) { viewport.scrollTop = 0; viewport.dispatchEvent(new Event('scroll', { bubbles: true })); }
     })()`);
     await quiet(240000, 'the scroll back to the top');
+    await blankRowsAt(0, 'back at the top');
 
     const settled = await evaluate(READ);
 
@@ -1069,6 +1146,90 @@ try {
     const trendRows = await ask(EpdData.trendSql(settled.substance, meta.months, meta.schemaMap), 'the trend');
     check(charts.trendRows === trendRows.length, 'the trend holds the months the endpoint returns',
       `${charts.trendRows} on the page, ${trendRows.length} from a query run here`);
+
+    /* ---- one drawing per chart, and the picker moves it ---- */
+
+    /*
+     * A chart is a drawing in an element. Drawing a second one into the same
+     * element does not remove the first, and the box is the height of one, so
+     * the reader goes on looking at the first while the page reports the
+     * second. Counting them is the only way to tell from outside.
+     */
+    const TREND = `(() => {
+      const d = window.__prescribingDemo;
+      const data = d.charts.trend && d.charts.trend.data();
+      const series = (data && data.series) || [];
+      return {
+        substance: d.view.substance,
+        picked: d.controls.substancePicker.value,
+        options: d.controls.substancePicker.options.length,
+        firstY: series[0] && series[0].points[0] ? series[0].points[0].y : null,
+        points: series.reduce((n, x) => n + x.points.length, 0),
+        sql: (d.queries.find((q) => q.label === 'two years of one substance') || {}).sql,
+        drawings: [...document.querySelectorAll('.chart-box')].map((b) => b.querySelectorAll('svg').length),
+      };
+    })()`;
+    await evaluate("window.__prescribingDemo.tabs.activate('trend')");
+    await sleep(2500);
+    const trendBefore = await evaluate(TREND);
+    /*
+     * The picker has to have something to offer. It is filled after the grid
+     * is rebuilt, and a grid that has just been rebuilt has no rows yet, so a
+     * picker filled from the grid alone collapses to a single option and a
+     * reader cannot choose anything else. That is indistinguishable, from the
+     * outside, from a page that ignores the control.
+     */
+    check(trendBefore.options > 10, 'the substance picker offers a choice, not one option',
+      `${trendBefore.options} options`);
+    check(!!trendBefore.picked, 'and has one of them chosen', `"${trendBefore.picked}"`);
+    check(trendBefore.picked === trendBefore.substance,
+      'and it is the one the page is showing', `"${trendBefore.picked}" against "${trendBefore.substance}"`);
+    const chosen = await evaluate(`(() => {
+      const picker = window.__prescribingDemo.controls.substancePicker;
+      const next = [...picker.options].map((o) => o.value).find((v) => v !== picker.value);
+      picker.value = next;
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+      return next;
+    })()`);
+    /* Wait on the chart itself rather than on the log: what matters is that
+       the drawing changed, and the log is a bounded list that a long scroll
+       can push an entry off the end of. */
+    await waitFor(`(() => {
+      const d = window.__prescribingDemo;
+      const data = d.charts.trend && d.charts.trend.data();
+      const series = (data && data.series) || [];
+      const first = series[0] && series[0].points[0] ? series[0].points[0].y : null;
+      return d.view.substance === ${JSON.stringify(chosen)}
+        && first !== null && first !== ${JSON.stringify(trendBefore.firstY)};
+    })()`, 240000, 'the trend for the chosen substance to come back');
+    await quiet(240000, 'the substance picker');
+    await sleep(2000);
+    const trendAfter = await evaluate(TREND);
+    console.log(`  substance picker: ${trendBefore.substance} -> ${trendAfter.substance}; `
+      + `first reading ${trendBefore.firstY} -> ${trendAfter.firstY}; `
+      + `drawings per chart box ${JSON.stringify(trendAfter.drawings)}`);
+    check(trendAfter.substance === chosen, 'choosing a substance changes which one the page is showing',
+      `${trendAfter.substance}, chose ${chosen}`);
+    check(String(trendAfter.sql).includes(String(chosen).toUpperCase()),
+      'and the statement sent names it', String(trendAfter.sql).slice(0, 140));
+    check(trendAfter.points >= 20, 'the chart still holds two years of months', `${trendAfter.points}`);
+    check(trendAfter.firstY !== trendBefore.firstY, 'and the readings it draws are that substance\'s',
+      `${trendBefore.firstY} -> ${trendAfter.firstY}`);
+    check(trendAfter.drawings.every((n) => n === 1),
+      'each chart box holds exactly one drawing, so what is on screen is the newest',
+      `drawings per box: ${JSON.stringify(trendAfter.drawings)}`);
+    check(trendBefore.drawings.every((n) => n === 1),
+      'and held one before the picker was touched too',
+      `drawings per box: ${JSON.stringify(trendBefore.drawings)}`);
+
+    /* Back to the substance the page opens on, for the screenshot. */
+    await evaluate(`(() => {
+      const d = window.__prescribingDemo;
+      d.controls.substancePicker.value = ${JSON.stringify(meta.defaultSubstance)};
+      d.controls.substancePicker.dispatchEvent(new Event('change', { bubbles: true }));
+      d.tabs.activate('chapters');
+    })()`);
+    await quiet(240000, 'the substance going back');
 
     /* ---- the statements are all shown ---- */
 

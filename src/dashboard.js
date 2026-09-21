@@ -19,8 +19,15 @@
   const D = root.EpdData;
   const S = root.EpdSource;
 
-  /** How many statements the query panel keeps. */
-  const QUERY_LOG_LENGTH = 12;
+  /**
+   * How many statements the query panel keeps.
+   *
+   * Enough that scrolling a grid for a while does not push the interesting
+   * ones off the end, and bounded, because a page left open all afternoon
+   * should not grow a list without limit. The caption says the number, so the
+   * panel never implies it is showing more than it is.
+   */
+  const QUERY_LOG_LENGTH = 40;
   /** How long after the last keystroke the search reaches the endpoint. */
   const SEARCH_DEBOUNCE_MS = 300;
   /** How many chapters and care boards the charts draw. */
@@ -286,7 +293,16 @@
     /* ---------------- the endpoint client ---------------- */
 
     const client = S.createClient({
-      onQuery(entry) {
+      onQuery(entry, phase) {
+        if (phase === 'dropped') {
+          /* Superseded before it was answered. It never reached the endpoint
+             on anyone's behalf, so it is taken off the list rather than left
+             there looking like a failure. */
+          const at = built.queries.indexOf(entry);
+          if (at >= 0) built.queries.splice(at, 1);
+          drawQueryLog();
+          return;
+        }
         /* The same entry is offered twice: once when the statement is queued,
            once when it lands. It is the same object both times, so it moves to
            the top only on the first. */
@@ -526,25 +542,68 @@
     panel.append(gridCaption, gridPane, totalsLine);
     host.append(panel);
 
-    const mainGrid = createGrid(gridPane, baseGridConfig('What England prescribed', {
-      columns: mainColumns(D.levelFor(view.level)),
-      /* The saved copy is a memory source, so the grid has rows to paint
-         before the first query has been sent. `goLive` replaces it. */
-      source: { mode: 'memory', rows: snapshot.substances },
-      /*
-       * Find is off here on purpose. Over a windowed source it searches the
-       * rows that happen to be loaded, and a search box on this page that
-       * quietly meant "the hundred rows you can see" beside one that means
-       * "every row in the month" would be two boxes that look the same and
-       * answer different questions. The one above is the one that queries.
-       */
-      find: false,
-    }));
+    /**
+     * Build the main grid over one source.
+     *
+     * The grid is built with the source it is going to read, every time.
+     * Handing a live source to a grid that already exists is the other way to
+     * do it and it does not paint: the rows arrive, the model holds them, and
+     * the windows past the first stay blank. So the grid is made anew when
+     * what it reads changes, and the state a reader chose is carried across
+     * here rather than hoped for.
+     *
+     * @param {object} sourceConfig the source to read
+     * @returns {object} the grid
+     */
+    function makeMainGrid(sourceConfig) {
+      const grid = createGrid(gridPane, baseGridConfig('What England prescribed', {
+        columns: mainColumns(D.levelFor(view.level)),
+        source: sourceConfig,
+        /*
+         * Find is off here on purpose. Over a windowed source it searches the
+         * rows that happen to be loaded, and a search box on this page that
+         * quietly meant "the hundred rows you can see" beside one that means
+         * "every row in the month" would be two boxes that look the same and
+         * answer different questions. The one above is the one that queries.
+         */
+        find: false,
+      }));
+      /* The order, set through the sort model rather than declared in the
+         configuration: `sort` is not a configuration key, and a grid handed
+         one says so and ignores it. Here it is also the ORDER BY. */
+      grid.sort.set(built.sortModel.slice());
+      if (built.appliedQuick) grid.filters.quick(built.appliedQuick);
+      if (built.appliedFloor !== null) grid.filters.set({ col: 'cost', op: 'gte', value: built.appliedFloor });
+      /* A window the source could not fetch is the grid's own event, not
+         something this page has to notice for itself. */
+      grid.on('source:error', (event) => {
+        fail((event && event.error) || new Error('a window could not be fetched'));
+      });
+      /* The reader's own sort has to survive the next rebuild too. */
+      grid.on('sort:changed', () => { built.sortModel = grid.sort.get(); });
+      return grid;
+    }
+
+    /**
+     * Replace the main grid with one reading `sourceConfig`, keeping what the
+     * reader chose.
+     *
+     * @param {object} sourceConfig the source to read
+     * @returns {void}
+     */
+    function rebuildMainGrid(sourceConfig) {
+      built.sortModel = mainGrid.sort.get();
+      mainGrid.destroy();
+      gridPane.textContent = '';
+      mainGrid = makeMainGrid(sourceConfig);
+      built.mainGrid = mainGrid;
+    }
+
+    built.sortModel = [{ col: 'cost', dir: 'desc' }];
+    /* The saved copy is a memory source, so the grid has rows to paint before
+       the first query has been sent. */
+    let mainGrid = makeMainGrid({ mode: 'memory', rows: snapshot.substances });
     built.mainGrid = mainGrid;
-    /* The opening order, set through the sort model rather than declared in
-       the configuration: `sort` is not a configuration key, and a grid handed
-       one says so and ignores it. Here it is also the opening ORDER BY. */
-    mainGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
 
     /** The caption under the grid's title: what a row is, and how many. */
     function drawGridCaption() {
@@ -562,9 +621,9 @@
     querySection.setAttribute('aria-label', 'The statements the grid sent');
     querySection.append(el('h2', 'query-title', 'Query'));
     const queryCaption = el('p', 'panel-caption',
-      'Every statement the page has sent this session, newest first, as it was sent. Nothing is rewritten for '
-      + 'display. A statement answered from the session memory was sent once and remembered, so scrolling back '
-      + 'up costs nothing.');
+      'The last ' + QUERY_LOG_LENGTH + ' statements the page has sent, newest first, as they were sent. Nothing '
+      + 'is rewritten for display. A statement answered from the session memory was sent once and remembered, '
+      + 'so scrolling back up costs nothing.');
     querySection.append(queryCaption);
     const queryList = el('ol', 'query-log');
     querySection.append(queryList);
@@ -684,6 +743,30 @@
     });
     built.tabs = tabs;
 
+    /**
+     * Draw one chart into a container that may already hold one.
+     *
+     * A chart is a drawing in an element, and making a second one does not
+     * remove the first: two drawings then sit in a box the height of one, and
+     * the one a reader sees is the one that was there first. Which is to say
+     * the page looked frozen. The old chart is taken down before the new one
+     * goes up.
+     *
+     * @param {string} id which chart this is
+     * @param {HTMLElement} container where it goes
+     * @param {object} spec the rest of the chart specification
+     * @returns {object} the chart
+     */
+    function drawChart(id, container, spec) {
+      const previous = built.charts[id];
+      if (previous && typeof previous.destroy === 'function') {
+        try { previous.destroy(); } catch { /* already gone */ }
+      }
+      container.textContent = '';
+      built.charts[id] = createChart(Object.assign({ container }, spec));
+      return built.charts[id];
+    }
+
     /** Redraw the three charts from whatever their grids hold. */
     function drawCharts() {
       /* The axis carries its unit and nothing else. The tick labels abbreviate
@@ -691,9 +774,8 @@
          is said in the caption above the chart, where there is room for it
          without landing on top of a tick. */
       const moneyAxis = 'Actual cost, GBP';
-      built.charts.chapters = createChart({
+      drawChart('chapters', chapterBox, {
         grid: chapterGrid,
-        container: chapterBox,
         type: 'horizontalBar',
         x: 'name',
         y: 'cost',
@@ -703,9 +785,8 @@
         legend: false,
         tooltip: true,
       });
-      built.charts.boards = createChart({
+      drawChart('boards', icbBox, {
         grid: icbGrid,
-        container: icbBox,
         type: 'horizontalBar',
         x: 'name',
         y: 'cost',
@@ -715,9 +796,8 @@
         legend: false,
         tooltip: true,
       });
-      built.charts.trend = createChart({
+      drawChart('trend', trendBox, {
         grid: trendGrid,
-        container: trendBox,
         type: 'line',
         x: 'month',
         y: 'cost',
@@ -767,19 +847,36 @@
     drawGridCaption();
     drawStatus();
 
-    /** Fill the substance picker from whatever the grid is showing. */
+    /**
+     * Fill the substance picker.
+     *
+     * The saved copy is the floor, always, and the grid's own rows are added
+     * on top of it when it has any. Reading the grid alone was wrong: a grid
+     * that has just been rebuilt has no rows for a second or two, and a picker
+     * filled from it in that moment ends up offering one option, or none. A
+     * reader who then tries to choose a different substance finds there is no
+     * different substance to choose, which looks exactly like a page that has
+     * stopped responding.
+     *
+     * @returns {void}
+     */
     function drawSubstancePicker() {
-      const names = new Set([view.substance]);
+      const names = new Set();
+      if (view.substance) names.add(view.substance);
+      for (const row of snapshot.substances.slice(0, 60)) if (row.name) names.add(row.name);
       if (view.level === 'substance') {
         for (const row of mainGrid.rows.data().slice(0, 60)) if (row.name) names.add(row.name);
-      } else {
-        for (const row of snapshot.substances.slice(0, 60)) names.add(row.name);
       }
       substancePicker.textContent = '';
       for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
         const option = el('option', null, name);
         option.value = name;
         substancePicker.append(option);
+      }
+      /* Never leave it showing nothing: a picker with no chosen value is one
+         `change` away from asking the endpoint about a substance called "". */
+      if (!view.substance || !names.has(view.substance)) {
+        view.substance = names.has(meta.defaultSubstance) ? meta.defaultSubstance : [...names][0];
       }
       substancePicker.value = view.substance;
     }
@@ -948,9 +1045,7 @@
            carries one, and it is the list the page opened with. */
         fail(error);
       }
-      mainGrid.set('source', S.createEpdSource({
-        view, client, createPushdownSource, pageSize: PAGE_SIZE,
-      }));
+      rebuildMainGrid(S.createEpdSource({ view, client, createPushdownSource, pageSize: PAGE_SIZE }));
       built.isLive = true;
       built.lastError = null;
       enableControls(true);
@@ -960,11 +1055,6 @@
       drawSubstancePicker();
     }
 
-    /* A window the source could not fetch is the grid's own event, not
-       something this page has to notice for itself. */
-    mainGrid.on('source:error', (event) => {
-      fail((event && event.error) || new Error('a window could not be fetched'));
-    });
 
     /** Read the months the dataset holds now, rather than when it was saved. */
     async function refreshMonths() {
@@ -1069,7 +1159,7 @@
     monthPicker.addEventListener('change', async () => {
       view.month = monthPicker.value;
       if (!built.isLive) { drawStatus(); return; }
-      mainGrid.set('source', S.createEpdSource({ view, client, createPushdownSource, pageSize: PAGE_SIZE }));
+      rebuildMainGrid(S.createEpdSource({ view, client, createPushdownSource, pageSize: PAGE_SIZE }));
       await refreshEverything();
       drawGridCaption();
       drawStatus();
@@ -1077,10 +1167,9 @@
 
     levelPicker.addEventListener('change', async () => {
       view.level = levelPicker.value;
-      const level = D.levelFor(view.level);
-      const next = { columns: mainColumns(level) };
-      if (built.isLive) next.source = S.createEpdSource({ view, client, createPushdownSource, pageSize: PAGE_SIZE });
-      mainGrid.setAll(next);
+      rebuildMainGrid(built.isLive
+        ? S.createEpdSource({ view, client, createPushdownSource, pageSize: PAGE_SIZE })
+        : { mode: 'memory', rows: snapshot.substances });
       drawGridCaption();
       if (built.isLive) await refreshTotalsRow();
       drawSubstancePicker();
@@ -1166,6 +1255,9 @@
     });
 
     substancePicker.addEventListener('change', async () => {
+      /* A select that was handed a value it has no option for reports the
+         empty string. There is no such substance, so there is nothing to ask. */
+      if (!substancePicker.value) { substancePicker.value = view.substance; return; }
       view.substance = substancePicker.value;
       if (!built.isLive) return;
       await refreshTrend();
