@@ -714,14 +714,21 @@ try {
     /* ---- a slow answer cannot overwrite a newer one ---- */
 
     /*
-     * Deliberately raced. Asking for practices sends a totals statement the
-     * session has never seen, which takes seconds; going straight back to
-     * substances sends one it has, which is answered in the same tick. So the
+     * Deliberately raced, and the setup is what makes it deterministic. The
+     * page is settled on substances first, so this month's substance totals
+     * are remembered. Asking for practices then sends a statement the session
+     * has never seen, which takes seconds; going straight back to substances
+     * sends the remembered one, which is answered in the same tick. So the
      * slow answer is guaranteed to arrive after the fast one, and the totals
      * row must still describe the grid a reader is looking at.
      */
     const raced = await evaluate(`(async () => {
       const d = window.__prescribingDemo;
+      /* Settle on substances first, so this month's substance totals are in
+         the session's memory and the second answer below is instant. */
+      d.controls.levelPicker.value = 'substance';
+      d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 16000));
       d.controls.levelPicker.value = 'practice';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 300));
@@ -730,17 +737,25 @@ try {
       await new Promise((r) => setTimeout(r, 30000));
       return {
         level: d.view.level,
+        month: d.view.month,
         count: d.mainGrid.rows.count(),
         pinned: d.mainGrid.getPinnedRows({ edge: 'bottom' })[0] || null,
       };
     })()`);
     console.log(`  after a raced level change: ${raced.count} rows, totals row "${raced.pinned && raced.pinned.name}"`);
+    const racedTotals = (await ask(EpdData.matchTotalsSql({
+      month: raced.month, level: 'substance', schemaMap: meta.schemaMap, filters: null, quick: '', sort: [],
+    }), 'the raced totals'))[0];
     check(raced.level === 'substance', 'the raced level change landed on substances', raced.level);
     check(!!raced.pinned && /chemical substances/i.test(raced.pinned.name),
       'a slow answer for a level the reader has left cannot overwrite the totals row of the one they are on',
       raced.pinned && raced.pinned.name);
-    check(!!raced.pinned && Number(raced.pinned.items) > 0,
-      'and the totals row still carries figures', raced.pinned && raced.pinned.items);
+    check(!!raced.pinned && raced.pinned.name.includes(Number(racedTotals.matched).toLocaleString('en-GB')),
+      'and the count in it is the one the grid is showing, not the one the slow answer carried',
+      `${raced.pinned && raced.pinned.name}, expected ${Number(racedTotals.matched).toLocaleString('en-GB')}`);
+    check(!!raced.pinned && near(Number(raced.pinned.items), Number(racedTotals.items), 1e-9),
+      'and so are its figures',
+      `${raced.pinned && raced.pinned.items}, expected ${racedTotals.items}`);
 
     /* ---- back to where the screenshot should be taken ---- */
 
