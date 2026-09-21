@@ -899,6 +899,34 @@ try {
       'and says when one was answered from the session rather than sent again',
       [...new Set(panel.cached)].join(', '));
 
+    /*
+     * What the screenshot is about to photograph. A page that was right when
+     * it was measured and wrong a moment later is still wrong, and a still
+     * picture is the one artefact that cannot argue back, so the state in it
+     * is asserted rather than assumed.
+     */
+    const forTheShot = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
+      return {
+        month: d.view.month,
+        level: d.view.level,
+        count: d.mainGrid.rows.count(),
+        pinned: d.mainGrid.getPinnedRows({ edge: 'bottom' })[0] || null,
+        status: (document.querySelector('.freshness') || {}).textContent || '',
+        caption: (document.querySelector('.primary-host .panel-caption') || {}).textContent || '',
+        recent: d.queries.slice(0, 6).map((q) => q.label + ' ' + q.source),
+      };
+    })()`);
+    console.log(`  at the moment of the screenshot: ${forTheShot.month} / ${forTheShot.level}, `
+      + `${forTheShot.count} rows, totals row "${forTheShot.pinned && forTheShot.pinned.name}"`);
+    console.log(`    most recent statements: ${forTheShot.recent.join(' | ')}`);
+    check(!!forTheShot.pinned
+      && forTheShot.pinned.name.includes(EpdData.monthLabel(forTheShot.month)),
+      'the totals row names the month the rest of the page is showing',
+      `${forTheShot.pinned && forTheShot.pinned.name} against ${EpdData.monthLabel(forTheShot.month)}`);
+    check(forTheShot.caption.includes(EpdData.resourceFor(forTheShot.month)),
+      'and so does the caption over the grid', forTheShot.caption);
+
     await shoot('01-dashboard-1280');
     noErrors('the live page');
   }

@@ -787,7 +787,13 @@
       const statement = D.matchTotalsSql(queryState());
       try {
         const records = await client.run(statement, { label: 'totals row' });
+        /* Two guards, because they answer different questions. The sequence
+           says "something newer has been asked for since". The view says
+           "this answer does not describe what is on screen", which is the
+           thing that actually matters and is true of a stale answer however
+           it got here. */
         if (seq !== totalsSeq) return;
+        if (asked.month !== view.month || asked.level !== view.level) return;
         const row = records[0] || {};
         built.matched = {
           matched: Number(row.matched), items: Number(row.items), cost: Number(row.cost),
