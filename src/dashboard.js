@@ -8,7 +8,7 @@
  * public internet. The statements are shown under the grid exactly as they
  * were sent.
  *
- * Nothing here computes a figure the endpoint could compute. The totals row is
+ * Nothing here computes a figure the endpoint could compute. The totals line is
  * a query, the tiles are a query, each chart is a query. A figure worked out
  * in the browser from the hundred rows that happen to be loaded would describe
  * the page rather than the month, and this page is about the month.
@@ -305,7 +305,7 @@
       'Every prescription item dispensed in England, around eighteen million rows a month, queried where it '
       + 'lives. The grid turns its own state into SQL and sends it to the NHS Business Services Authority open '
       + 'data endpoint: scrolling is LIMIT and OFFSET, the sort arrows are ORDER BY, the search box is a WHERE '
-      + 'and the totals row is its own query. Nothing is downloaded first. Built with Lattice Grid loaded by '
+      + 'and the totals under it are their own query. Nothing is downloaded first. Built with Lattice Grid loaded by '
       + 'script tag: no install, no build step.'));
     header.append(heading);
 
@@ -509,7 +509,13 @@
     const panel = el('section', 'panel primary-host');
     const gridCaption = el('p', 'panel-caption');
     const gridPane = el('div', 'grid-pane');
-    panel.append(gridCaption, gridPane);
+    /*
+     * The totals, written by the page under the grid rather than pinned inside
+     * it. They are one query over everything the filter matched, so they
+     * belong beside the grid whatever shape they are drawn in.
+     */
+    const totalsLine = el('p', 'totals-line');
+    panel.append(gridCaption, gridPane, totalsLine);
     host.append(panel);
 
     const mainGrid = createGrid(gridPane, baseGridConfig('What England prescribed', {
@@ -770,10 +776,10 @@
     }
     drawSubstancePicker();
 
-    /* ---------------- the totals row ---------------- */
+    /* ---------------- the totals ---------------- */
 
     /**
-     * The totals row, which is its own query over everything the filter
+     * The totals, which are their own query over everything the filter
      * matches rather than a sum of the rows on screen.
      *
      * A windowed grid holds one page. Adding that page up and calling it a
@@ -783,7 +789,7 @@
      */
     async function refreshTotalsRow() {
       if (!built.isLive) {
-        mainGrid.setPinnedRows([savedTotalsRow()], { edge: 'bottom' });
+        drawTotalsLine(savedTotals());
         return;
       }
       /*
@@ -792,7 +798,7 @@
        * seen is answered from memory in the same tick, while the one asked
        * for before it is still crossing the Atlantic: without this, changing
        * what a row is and changing it back again left the earlier answer
-       * landing last, and the totals row under a grid of substances read
+       * landing last, and the totals under a grid of substances read
        * "Total of 8,760 practices". Only the newest request may write.
        */
       const seq = ++totalsSeq;
@@ -812,20 +818,20 @@
           matched: Number(row.matched), items: Number(row.items), cost: Number(row.cost),
           quantity: Number(row.quantity), costPerItem: Number(row.costPerItem),
         };
-        mainGrid.setPinnedRows([{
-          name: totalsLabel(built.matched.matched, asked),
+        drawTotalsLine({
+          label: totalsLabel(built.matched.matched, asked),
           items: built.matched.items,
           cost: built.matched.cost,
           quantity: built.matched.quantity,
           costPerItem: built.matched.costPerItem,
-        }], { edge: 'bottom' });
+        });
       } catch (error) {
         fail(error);
       }
     }
 
     /**
-     * What the totals row is called, given how many rows it covers.
+     * What the totals are called, given how many rows they cover.
      *
      * Named from the state the question was asked in rather than from the
      * state the page happens to be in when the answer lands, so the label and
@@ -841,11 +847,11 @@
       return 'Total of ' + D.fmt.int(matched) + ' ' + noun + ', ' + D.monthLabel(asked.month);
     }
 
-    /** The totals row while the page is still on the saved copy. */
-    function savedTotalsRow() {
+    /** The totals while the page is still on the saved copy. */
+    function savedTotals() {
       const totals = meta.totals;
       return {
-        name: 'Total of ' + D.fmt.int(meta.substancesInLatestMonth) + ' chemical substances, '
+        label: 'Total of ' + D.fmt.int(meta.substancesInLatestMonth) + ' chemical substances, '
           + D.monthLabel(meta.latest) + ' (saved copy)',
         items: totals.items,
         cost: totals.cost,
@@ -853,7 +859,23 @@
         costPerItem: totals.cost / totals.items,
       };
     }
-    mainGrid.setPinnedRows([savedTotalsRow()], { edge: 'bottom' });
+
+    /**
+     * Write the totals line.
+     *
+     * @param {object} totals `{ label, items, cost, quantity, costPerItem }`
+     * @returns {void}
+     */
+    function drawTotalsLine(totals) {
+      built.totalsLine = totals;
+      totalsLine.textContent = totals.label + ': '
+        + D.fmt.int(totals.items) + ' items, '
+        + D.fmt.money(totals.cost) + ' actual cost, '
+        + D.fmt.int(totals.quantity) + ' total quantity, '
+        + D.fmt.money2(totals.costPerItem) + ' per item. '
+        + 'Counted over every row the filter matched, not over the rows on screen.';
+    }
+    drawTotalsLine(savedTotals());
 
     /** Which totals request is the newest. An older answer is dropped. */
     let totalsSeq = 0;
@@ -954,7 +976,7 @@
     }
 
     /**
-     * The tiles, the charts and the totals row, all from the endpoint.
+     * The tiles, the charts and the totals, all from the endpoint.
      *
      * On the first pass the month's totals have already been asked for, by the
      * probe that decided the endpoint was answering; asking again costs

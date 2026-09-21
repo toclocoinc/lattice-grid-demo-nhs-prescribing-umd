@@ -340,7 +340,8 @@ try {
       bodyCells: viewport ? viewport.querySelectorAll('[role="gridcell"]').length : 0,
       columnHeaders: gridRoot ? gridRoot.querySelectorAll('[role="columnheader"]').length : 0,
       headings: gridRoot ? [...gridRoot.querySelectorAll('[role="columnheader"]')].map((c) => c.textContent.trim()) : [],
-      pinned: d.mainGrid.getPinnedRows({ edge: 'bottom' }),
+      totals: d.totalsLine || null,
+      totalsText: (document.querySelector('.totals-line') || {}).textContent || '',
       queries: (d.queries || []).map((q) => ({ label: q.label, sql: q.sql, rows: q.rows, ms: q.ms, source: q.source, error: q.error || null })),
       status: (document.querySelector('.freshness') || {}).textContent || '',
       pill: (document.querySelector('.pill') || {}).textContent || '',
@@ -416,8 +417,11 @@ try {
     check(off.count === savedSubstances.length, 'live view off: the grid holds the saved copy',
       `${off.count} rows, expected ${savedSubstances.length}`);
     check(off.dataRows > 0, 'live view off: the grid paints data rows', `${off.dataRows}`);
-    check(off.pinned.length === 1 && /saved copy/i.test(off.pinned[0].name),
-      'live view off: the totals row says it is the saved copy', off.pinned[0] && off.pinned[0].name);
+    check(/saved copy/i.test(off.totalsText),
+      'live view off: the totals line says it is the saved copy', off.totalsText);
+    check(!!off.totals && near(Number(off.totals.items), meta.totals.items, 1e-9),
+      'live view off: and carries the saved figures',
+      `${off.totals && off.totals.items}, expected ${meta.totals.items}`);
     check(/saved copy/i.test(off.pill), 'live view off: the badge says saved copy', off.pill);
     check(off.tiles.length === 4, 'live view off: the four tiles are drawn from the saved totals', `${off.tiles.length}`);
     const offControls = await evaluate(`(() => {
@@ -534,7 +538,8 @@ try {
         names: rows.map((r) => r.name),
         sql: (d.queries.find((q) => q.label === 'grid rows') || {}).sql,
         totalsSql: (d.queries.find((q) => q.label === 'totals row') || {}).sql,
-        pinned: d.mainGrid.getPinnedRows({ edge: 'bottom' })[0] || null,
+        totals: d.totalsLine || null,
+        totalsText: (document.querySelector('.totals-line') || {}).textContent || '',
       };
     })()`);
     console.log(`  searching for "statin": ${searched.before.count} rows -> ${searched.count} rows`);
@@ -553,14 +558,14 @@ try {
     }), 'the search count'))[0].n);
     check(searched.count === searchCount, 'and the count is the endpoint\'s own',
       `${searched.count} on the page, ${searchCount} from a query run here`);
-    check(!!searched.pinned && /Total of/.test(searched.pinned.name),
-      'the totals row follows the search', searched.pinned && searched.pinned.name);
+    check(/Total of 8 chemical substances/.test(searched.totalsText),
+      'the totals line follows the search', searched.totalsText);
     const searchTotals = (await ask(EpdData.matchTotalsSql({
       month: live.month, level: live.level, schemaMap: meta.schemaMap, filters: null, quick: 'statin', sort: [],
     }), 'the search totals'))[0];
-    check(!!searched.pinned && near(Number(searched.pinned.cost), Number(searchTotals.cost), 1e-6),
+    check(!!searched.totals && near(Number(searched.totals.cost), Number(searchTotals.cost), 1e-6),
       'and its cost is the endpoint\'s total over everything the search matched, not over the page',
-      `${searched.pinned && searched.pinned.cost}, expected ${searchTotals.cost}`);
+      `${searched.totals && searched.totals.cost}, expected ${searchTotals.cost}`);
 
     /* ---- a threshold on a measure becomes a HAVING ---- */
 
@@ -753,23 +758,23 @@ try {
         level: d.view.level,
         month: d.view.month,
         count: d.mainGrid.rows.count(),
-        pinned: d.mainGrid.getPinnedRows({ edge: 'bottom' })[0] || null,
+        totals: d.totalsLine || null,
       };
     })()`);
-    console.log(`  after a raced level change: ${raced.count} rows, totals row "${raced.pinned && raced.pinned.name}"`);
+    console.log(`  after a raced level change: ${raced.count} rows, totals line "${raced.totals && raced.totals.label}"`);
     const racedTotals = (await ask(EpdData.matchTotalsSql({
       month: raced.month, level: 'substance', schemaMap: meta.schemaMap, filters: null, quick: '', sort: [],
     }), 'the raced totals'))[0];
     check(raced.level === 'substance', 'the raced level change landed on substances', raced.level);
-    check(!!raced.pinned && /chemical substances/i.test(raced.pinned.name),
-      'a slow answer for a level the reader has left cannot overwrite the totals row of the one they are on',
-      raced.pinned && raced.pinned.name);
-    check(!!raced.pinned && raced.pinned.name.includes(Number(racedTotals.matched).toLocaleString('en-GB')),
+    check(!!raced.totals && /chemical substances/i.test(raced.totals.label),
+      'a slow answer for a level the reader has left cannot overwrite the totals of the one they are on',
+      raced.totals && raced.totals.label);
+    check(!!raced.totals && raced.totals.label.includes(Number(racedTotals.matched).toLocaleString('en-GB')),
       'and the count in it is the one the grid is showing, not the one the slow answer carried',
-      `${raced.pinned && raced.pinned.name}, expected ${Number(racedTotals.matched).toLocaleString('en-GB')}`);
-    check(!!raced.pinned && near(Number(raced.pinned.items), Number(racedTotals.items), 1e-9),
+      `${raced.totals && raced.totals.label}, expected ${Number(racedTotals.matched).toLocaleString('en-GB')}`);
+    check(!!raced.totals && near(Number(raced.totals.items), Number(racedTotals.items), 1e-9),
       'and so are its figures',
-      `${raced.pinned && raced.pinned.items}, expected ${racedTotals.items}`);
+      `${raced.totals && raced.totals.items}, expected ${racedTotals.items}`);
 
     /* ---- back to where the screenshot should be taken ---- */
 
@@ -802,21 +807,21 @@ try {
      * the page's own memory comes back in the same tick while the one asked
      * for before it is still in flight.
      */
-    check(!!settled.pinned[0] && /chemical substances/i.test(settled.pinned[0].name),
-      'the totals row names what a row of the grid currently is, not what it was',
-      settled.pinned[0] && settled.pinned[0].name);
-    check(!!settled.pinned[0] && settled.pinned[0].name.includes(String(settled.count).replace(/\B(?=(\d{3})+(?!\d))/g, ',')),
+    check(!!settled.totals && /chemical substances/i.test(settled.totals.label),
+      'the totals line names what a row of the grid currently is, not what it was',
+      settled.totals && settled.totals.label);
+    check(!!settled.totals && settled.totals.label.includes(Number(settled.count).toLocaleString('en-GB')),
       'and counts the same rows the status bar does',
-      `${settled.pinned[0] && settled.pinned[0].name} against ${settled.count} rows`);
+      `${settled.totals && settled.totals.label} against ${settled.count} rows`);
 
     /* ---- the totals row is a query, not a sum of the page ---- */
 
     const wholeTotals = (await ask(EpdData.matchTotalsSql({
       month: live.month, level: 'substance', schemaMap: meta.schemaMap, filters: null, quick: '', sort: [],
     }), 'the whole month totals'))[0];
-    const totalsRow = settled.pinned[0] || null;
-    console.log(`  totals row: ${totalsRow && totalsRow.name} / cost ${totalsRow && totalsRow.cost}`);
-    check(!!totalsRow, 'a totals row is pinned under the grid');
+    const totalsRow = settled.totals || null;
+    console.log(`  totals line: ${settled.totalsText}`);
+    check(!!totalsRow, 'a totals line is drawn under the grid');
     check(!!totalsRow && near(Number(totalsRow.cost), Number(wholeTotals.cost), 1e-6),
       'and its cost is the endpoint\'s total over the month',
       `${totalsRow && totalsRow.cost}, expected ${wholeTotals.cost}`);
@@ -925,19 +930,23 @@ try {
         month: d.view.month,
         level: d.view.level,
         count: d.mainGrid.rows.count(),
-        pinned: d.mainGrid.getPinnedRows({ edge: 'bottom' })[0] || null,
+        totals: d.totalsLine || null,
+        totalsText: (document.querySelector('.totals-line') || {}).textContent || '',
         status: (document.querySelector('.freshness') || {}).textContent || '',
         caption: (document.querySelector('.primary-host .panel-caption') || {}).textContent || '',
         recent: d.queries.slice(0, 6).map((q) => q.label + ' ' + q.source),
       };
     })()`);
     console.log(`  at the moment of the screenshot: ${forTheShot.month} / ${forTheShot.level}, `
-      + `${forTheShot.count} rows, totals row "${forTheShot.pinned && forTheShot.pinned.name}"`);
+      + `${forTheShot.count} rows, totals line "${forTheShot.totalsText}"`);
     console.log(`    most recent statements: ${forTheShot.recent.join(' | ')}`);
-    check(!!forTheShot.pinned
-      && forTheShot.pinned.name.includes(EpdData.monthLabel(forTheShot.month)),
-      'the totals row names the month the rest of the page is showing',
-      `${forTheShot.pinned && forTheShot.pinned.name} against ${EpdData.monthLabel(forTheShot.month)}`);
+    check(forTheShot.totalsText.includes(EpdData.monthLabel(forTheShot.month)),
+      'the totals line on screen names the month the rest of the page is showing',
+      `${forTheShot.totalsText} against ${EpdData.monthLabel(forTheShot.month)}`);
+    check(!!forTheShot.totals
+      && forTheShot.totalsText.includes(Number(forTheShot.totals.items).toLocaleString('en-GB')),
+      'and the figures on screen are the ones the page last computed',
+      forTheShot.totalsText);
     check(forTheShot.caption.includes(EpdData.resourceFor(forTheShot.month)),
       'and so does the caption over the grid', forTheShot.caption);
 

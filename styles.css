@@ -243,6 +243,20 @@ body {
   min-height: 0;
 }
 
+/*
+ * The totals under the grid. One query over everything the filter matched,
+ * which is a different set from the rows on screen, so it reads as a sentence
+ * about the month rather than as another row of the table.
+ */
+.totals-line {
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  flex: 0 0 auto;
+  font-size: 12px;
+  margin: 0;
+  padding-top: 7px;
+}
+
 /* A grid that is a data path rather than a view is never mounted. */
 .hidden-grid {
   display: none;

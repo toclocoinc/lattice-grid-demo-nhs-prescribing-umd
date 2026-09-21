@@ -474,7 +474,7 @@
    * rows are groups and a HAVING has already thrown some of them away: summing
    * the raw rows would add back the groups the reader filtered out. The count
    * it returns is the number of group rows, which is the same number that sizes
-   * the scrollbar, so the totals row and the scrollbar can never disagree.
+   * the scrollbar, so the totals and the scrollbar can never disagree.
    *
    * @param {object} state the same state `rowsSql` takes
    * @returns {{sql: string, resource: string}} the statement
@@ -504,7 +504,7 @@
   }
 
   /**
-   * The month's own totals, which is what the tiles and the totals row show.
+   * The month's own totals, which is what the tiles and the totals line show.
    *
    * Every figure here is over the whole month, never over the rows that happen
    * to be on screen.

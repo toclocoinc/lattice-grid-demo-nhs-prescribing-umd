@@ -4,7 +4,7 @@ Every prescription item dispensed in England, around eighteen million rows a mon
 queried where it lives. The grid turns its own state into SQL and sends it to the NHS
 Business Services Authority open data endpoint: scrolling is `LIMIT` and `OFFSET`, the
 sort arrows are `ORDER BY`, the search box is a `WHERE`, a threshold on a measure is a
-`HAVING`, and the totals row is its own query. Nothing is downloaded first.
+`HAVING`, and the totals under the grid are their own query. Nothing is downloaded first.
 
 Built with [Lattice Grid](https://latticegrid.dev) loaded from a CDN by plain
 `<script>` tags. No npm install, no bundler, no build step, no TypeScript. Open
@@ -162,9 +162,9 @@ The endpoint documents no rate limit. The page behaves as if it did.
 
 - The banner says whether the figures came from the endpoint or from the saved copy,
   and how long the last statement took.
-- The totals row under the grid is **its own query** over everything the filter
-  matches. It is never the sum of the rows that happen to be loaded, which would be a
-  number that changed when you scrolled.
+- The totals under the grid are **their own query** over everything the filter
+  matches. They are never the sum of the rows that happen to be loaded, which would be
+  a figure that changed when you scrolled.
 - The tiles are the month's own totals, and their movement line is a second query
   against the same month a year earlier.
 - If the endpoint does not answer, the page says so, keeps the last good result, and
@@ -194,7 +194,7 @@ machine. It loads the page in a real browser and asserts, among other things, th
 searching, sorting, changing what a row is and changing the month each change the
 statement **and** change the rows, which is what "pushed down" means and what a page
 that quietly filtered in the browser would fail. The figures on the tiles and in the
-totals row are compared with queries the check runs itself, in Node, so a page figure
+totals line are compared with queries the check runs itself, in Node, so a page figure
 is never checked against the page.
 
 The statements are compared against what the page's **own** SQL builder writes, loaded
