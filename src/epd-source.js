@@ -40,7 +40,7 @@
     const inFlight = new Map();
     /** The tail of the queue. Every request waits for the one before it. */
     let queue = Promise.resolve();
-    const state = { lastMs: null, lastAt: null, failures: 0, ok: 0 };
+    const state = { lastMs: null, lastAt: null, failures: 0, ok: 0, pending: 0 };
 
     /**
      * Run one statement.
@@ -58,14 +58,40 @@
         const rows = cache.get(key);
         onQuery({
           label, sql: statement.sql, resource: statement.resource,
-          ms: 0, rows: rows.length, source: 'session memory', at: Date.now(),
+          ms: 0, rows: rows.length, source: 'session memory', at: Date.now(), status: 'done',
         });
         return Promise.resolve(rows);
       }
       if (inFlight.has(key)) return inFlight.get(key);
 
+      /*
+       * The log entry is made when the statement is QUEUED, not when it comes
+       * back.
+       *
+       * A log that only records answers cannot tell "nothing was asked" from
+       * "the answer has not arrived yet", and those are opposite things: the
+       * first is a page that ignored you, the second is a page waiting. The
+       * panel says "sending" until it lands, and `state.pending` is how a
+       * caller knows the page has nothing outstanding.
+       */
+      const entry = {
+        label, sql: statement.sql, resource: statement.resource,
+        ms: null, rows: null, source: 'endpoint', at: Date.now(), status: 'sending',
+      };
+      state.pending += 1;
+      onQuery(entry);
+
+      const finish = (changes) => {
+        Object.assign(entry, changes, { status: 'done' });
+        state.pending -= 1;
+        onQuery(entry);
+      };
+
       const work = queue.then(async () => {
-        if (signal && signal.aborted) throw new DOMException('aborted', 'AbortError');
+        if (signal && signal.aborted) {
+          finish({ ms: 0, rows: 0, error: 'superseded before it was sent' });
+          throw new DOMException('aborted', 'AbortError');
+        }
         const url = SQL_URL
           + '?resource_id=' + encodeURIComponent(statement.resource)
           + '&sql=' + encodeURIComponent(statement.sql);
@@ -78,17 +104,19 @@
              policy in the way. The browser's own message for all of those is
              "Failed to fetch", which on its own tells a reader nothing about
              where the page was trying to go. */
-          if (signal && signal.aborted) throw error;
-          state.failures += 1;
           const ms = Date.now() - started;
+          if (signal && signal.aborted) {
+            /* Superseded by a newer window. Not a failure, but the entry has
+               to be closed or the page would think it was still waiting. */
+            finish({ ms, rows: 0, error: 'superseded by a newer request' });
+            throw error;
+          }
+          state.failures += 1;
           state.lastMs = ms;
           state.lastAt = started;
           const reason = 'the request to opendata.nhsbsa.net did not complete ('
             + String((error && error.message) || error) + ')';
-          onQuery({
-            label, sql: statement.sql, resource: statement.resource,
-            ms, rows: 0, source: 'endpoint', error: reason, at: started,
-          });
+          finish({ ms, rows: 0, error: reason });
           throw new Error(reason);
         }
         const body = await response.json().catch(() => null);
@@ -107,19 +135,13 @@
               + ' rows and sent a file instead of records'
             : ((body && body.error && body.error.message)
               || ('the endpoint answered HTTP ' + response.status));
-          onQuery({
-            label, sql: statement.sql, resource: statement.resource,
-            ms, rows: 0, source: 'endpoint', error: reason, at: started,
-          });
+          finish({ ms, rows: 0, error: reason });
           throw new Error(reason);
         }
 
         state.ok += 1;
         cache.set(key, records);
-        onQuery({
-          label, sql: statement.sql, resource: statement.resource,
-          ms, rows: records.length, source: 'endpoint', at: started,
-        });
+        finish({ ms, rows: records.length });
         return records;
       });
 

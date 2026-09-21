@@ -271,6 +271,8 @@
       tabs: null,
       charts: {},
       queries: [],
+      appliedQuick: '',
+      appliedFloor: null,
       months: meta.months.slice(),
       liveEnabled: live !== false,
       isLive: false,
@@ -285,13 +287,19 @@
 
     const client = S.createClient({
       onQuery(entry) {
-        built.queries.unshift(entry);
+        /* The same entry is offered twice: once when the statement is queued,
+           once when it lands. It is the same object both times, so it moves to
+           the top only on the first. */
+        if (!built.queries.includes(entry)) built.queries.unshift(entry);
         if (built.queries.length > QUERY_LOG_LENGTH) built.queries.length = QUERY_LOG_LENGTH;
         /* A statement that came back is the endpoint answering, so a failure
            notice from a minute ago stops being true and stops being shown. */
-        if (!entry.error && entry.source === 'endpoint') built.lastError = null;
+        if (entry.status === 'done' && !entry.error && entry.source === 'endpoint') built.lastError = null;
         drawQueryLog();
         drawStatus();
+        /* A control the reader moved while a statement was in flight has been
+           waiting for this moment. */
+        if (entry.status === 'done') catchUp();
       },
     });
     built.client = client;
@@ -570,9 +578,10 @@
         const metaLine = el('div', 'query-meta');
         metaLine.append(el('span', 'query-label', entry.label));
         metaLine.append(el('span', 'query-source', entry.source));
-        metaLine.append(el('span', 'query-ms', entry.error
-          ? 'failed'
-          : D.fmt.seconds(entry.ms) + ', ' + D.fmt.int(entry.rows) + ' rows'));
+        metaLine.append(el('span', 'query-ms', entry.status === 'sending'
+          ? 'sending'
+          : (entry.error ? 'failed' : D.fmt.seconds(entry.ms) + ', ' + D.fmt.int(entry.rows) + ' rows')));
+        if (entry.status === 'sending') item.classList.add('query-entry--sending');
         item.append(metaLine);
         if (entry.error) item.append(el('p', 'query-error', entry.error));
         item.append(el('pre', 'query-sql', entry.sql));
@@ -1077,27 +1086,81 @@
       drawSubstancePicker();
     });
 
+    /**
+     * Put what the controls say into the grid, if it is not there already.
+     *
+     * The controls are the truth and the grid is downstream of them, so this
+     * is written as "make the grid agree with the boxes" rather than as "do
+     * this when a key is pressed". That distinction is the whole point: a
+     * keystroke that lands while a statement is in flight used to be applied
+     * against a grid that was about to be replaced, and the reader was left
+     * looking at the answer to the question before theirs.
+     *
+     * Idempotent, so it can be called from the debounce, from a change event
+     * and from the completion of any statement without looping.
+     *
+     * @returns {boolean} whether anything actually changed
+     */
+    function applyControls() {
+      const text = search.value.trim();
+      const raw = costFloor.value;
+      const value = Number(raw);
+      const floor = (raw === '' || !Number.isFinite(value)) ? null : value;
+      let changed = false;
+      if (text !== built.appliedQuick) {
+        built.appliedQuick = text;
+        mainGrid.filters.quick(text);
+        changed = true;
+      }
+      if (floor !== built.appliedFloor) {
+        built.appliedFloor = floor;
+        mainGrid.filters.set(floor === null ? null : { col: 'cost', op: 'gte', value: floor });
+        changed = true;
+      }
+      return changed;
+    }
+
+    /**
+     * Called when any statement lands: if the controls have moved on since the
+     * grid was last told, tell it now. Nothing a reader typed is dropped
+     * because the page was busy when they typed it.
+     *
+     * @returns {void}
+     */
+    function catchUp() {
+      if (!built.isLive || searchTimer) return;
+      if (applyControls()) refreshTotalsRow();
+    }
+    built.catchUp = catchUp;
+    built.applyControls = applyControls;
+
     let searchTimer = null;
-    search.addEventListener('input', () => {
+    /** The debounce, from the last keystroke rather than from the first. */
+    const scheduleSearch = () => {
       if (searchTimer) clearTimeout(searchTimer);
-      /* Three hundred milliseconds after the last keystroke, not on each one.
-         Somebody else's public endpoint does not need a query per letter. */
       searchTimer = setTimeout(async () => {
-        mainGrid.filters.quick(search.value.trim());
-        if (built.isLive) await refreshTotalsRow();
+        searchTimer = null;
+        /* Three hundred milliseconds after the last keystroke, not one query
+           per letter: somebody else's public endpoint does not need that. */
+        if (applyControls() && built.isLive) await refreshTotalsRow();
       }, SEARCH_DEBOUNCE_MS);
-    });
+    };
+    /* `input` covers typing and pasting; `change` covers a value committed by
+       a blur, by Enter, or by a tool driving the page. */
+    search.addEventListener('input', scheduleSearch);
+    search.addEventListener('change', scheduleSearch);
 
     costFloor.addEventListener('change', async () => {
-      const value = Number(costFloor.value);
-      if (costFloor.value === '' || !Number.isFinite(value)) mainGrid.filters.set(null);
-      else mainGrid.filters.set({ col: 'cost', op: 'gte', value });
-      if (built.isLive) await refreshTotalsRow();
+      if (applyControls() && built.isLive) await refreshTotalsRow();
     });
+    costFloor.addEventListener('input', scheduleSearch);
 
     clearButton.addEventListener('click', async () => {
       search.value = '';
       costFloor.value = '';
+      if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
+      built.appliedQuick = '';
+      built.appliedFloor = null;
       mainGrid.filters.clear();
       if (built.isLive) await refreshTotalsRow();
     });
@@ -1134,6 +1197,8 @@
        usable from the saved copy, and the first query takes a second or two. */
     built.ready = goLive().catch((error) => { fail(error); }).then(() => built);
 
+    /** How many statements are out. Zero means the page is waiting for nothing. */
+    built.pending = () => client.state.pending;
     built.goLive = goLive;
     built.refreshEverything = refreshEverything;
     built.refreshTotalsRow = refreshTotalsRow;

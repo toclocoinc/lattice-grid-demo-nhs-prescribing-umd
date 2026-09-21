@@ -60,6 +60,16 @@ const args = process.argv.slice(2);
 const shotIndex = args.indexOf('--shots');
 const shotDir = shotIndex >= 0 ? resolve(args[shotIndex + 1]) : null;
 const OFFLINE = process.env.OFFLINE === '1';
+/**
+ * Make this machine behave like a slow continuous-integration runner.
+ *
+ * `THROTTLE=4` slows the page's CPU fourfold and puts a latency and a
+ * bandwidth cap on every request, which is what a shared runner feels like. It
+ * exists because a check that only ever runs on a fast machine tests the
+ * machine as much as the page: the first version of this file waited a fixed
+ * nine seconds after typing and passed here and failed there.
+ */
+const THROTTLE = Number(process.env.THROTTLE || 0);
 
 /** The release every library tag must name, and the globals each file leaves. */
 const GRID_VERSION = '1.66.0';
@@ -265,6 +275,18 @@ try {
   await call('Log.enable');
   await call('Network.enable');
   await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  if (THROTTLE > 0) {
+    await call('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
+    const latency = Number(process.env.LATENCY || 300);
+    const kbps = Number(process.env.KBPS || 1500);
+    await call('Network.emulateNetworkConditions', {
+      offline: false,
+      latency,
+      downloadThroughput: (kbps * 1024) / 8,
+      uploadThroughput: (kbps * 1024) / 16,
+    });
+    console.log(`Throttle: CPU x${THROTTLE}, ${latency} ms latency, ${kbps} kbps down`);
+  }
 
   const evaluate = async (expression) => {
     const result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
@@ -287,6 +309,44 @@ try {
     throw new Error(`timed out waiting for ${what}`);
   };
 
+  /**
+   * Wait until the page has no statement outstanding.
+   *
+   * This replaces every fixed sleep this file used to take after an
+   * interaction. A sleep encodes how fast the machine was on the day it was
+   * written: nine seconds was ample here and not enough on a shared runner,
+   * where the same page was still waiting for its answer and the check called
+   * that a failure. The page says how many statements are out; that is the
+   * thing to wait on.
+   */
+  const quiet = async (timeout, what) => {
+    /* A beat first, so a control's own debounce has started before quiet is
+       taken for finished. */
+    await sleep(700);
+    await waitFor('window.__prescribingDemo.pending() === 0', timeout, `${what} to settle`);
+    /* And a beat after, for the render and the follow-up the completion of a
+       statement can schedule. */
+    await sleep(500);
+    await waitFor('window.__prescribingDemo.pending() === 0', timeout, `${what} to stay settled`);
+  };
+
+  /**
+   * Wait until a row query containing this text has been sent AND answered.
+   *
+   * Sent is not enough and answered is the point: the rows on screen are the
+   * answer to it. The log records a statement when it is queued and marks it
+   * done when it lands, so both are visible.
+   */
+  const answered = async (fragment, timeout, what) => waitFor(
+    `(() => {
+      const q = window.__prescribingDemo.queries || [];
+      return q.some((e) => e.label === 'grid rows' && e.status === 'done' && !e.error
+        && String(e.sql).includes(${JSON.stringify(fragment)}));
+    })()`,
+    timeout,
+    what,
+  );
+
   /** Open the page with a clean error log and wait for it to finish settling. */
   const open = async (url, label) => {
     consoleErrors = [];
@@ -295,7 +355,7 @@ try {
     latticeDiagnostics = [];
     console.log(`\n--- ${label} ---\n${url}`);
     await call('Page.navigate', { url });
-    await waitFor('!!(window.__prescribingDemo && window.__prescribingDemo.ready_)', 150000, `${label} to settle`);
+    await waitFor('!!(window.__prescribingDemo && window.__prescribingDemo.ready_)', 300000, `${label} to settle`);
   };
 
   /** Save a screenshot, when a directory was asked for. */
@@ -474,6 +534,7 @@ try {
   } else {
     /* ---- it went live ---- */
 
+    await quiet(300000, 'the page after it went live');
     const live = await evaluate(READ);
     check(live.built === true, 'the page built its dashboard', live.built ? '' : String(live.error));
     if (!live.built) throw new Error(`the page did not build: ${live.error}`);
@@ -525,15 +586,22 @@ try {
 
     /* ---- searching goes to the endpoint ---- */
 
-    const searched = await evaluate(`(async () => {
+    const before = await evaluate(`(() => {
       const d = window.__prescribingDemo;
-      const before = { count: d.mainGrid.rows.count(), first: (d.mainGrid.rows.data()[0] || {}).name, sql: (d.queries[0] || {}).sql };
+      return { count: d.mainGrid.rows.count(), first: (d.mainGrid.rows.data()[0] || {}).name,
+        sql: (d.queries.find((q) => q.label === 'grid rows') || {}).sql };
+    })()`);
+    await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       d.controls.search.value = 'statin';
       d.controls.search.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 9000));
+    })()`);
+    await answered("LIKE '%statin%'", 180000, 'the search to reach the endpoint and come back');
+    await quiet(180000, 'the search');
+    const searched = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       const rows = d.mainGrid.rows.data();
       return {
-        before,
         count: d.mainGrid.rows.count(),
         names: rows.map((r) => r.name),
         sql: (d.queries.find((q) => q.label === 'grid rows') || {}).sql,
@@ -542,6 +610,7 @@ try {
         totalsText: (document.querySelector('.totals-line') || {}).textContent || '',
       };
     })()`);
+    searched.before = before;
     console.log(`  searching for "statin": ${searched.before.count} rows -> ${searched.count} rows`);
     console.log(`    ${searched.sql}`);
     check(searched.count > 0 && searched.count < searched.before.count,
@@ -567,24 +636,77 @@ try {
       'and its cost is the endpoint\'s total over everything the search matched, not over the page',
       `${searched.totals && searched.totals.cost}, expected ${searchTotals.cost}`);
 
-    /* ---- a threshold on a measure becomes a HAVING ---- */
+    /* ---- a search the page never saw an event for is still applied ---- */
 
-    const thresholded = await evaluate(`(async () => {
+    /*
+     * The box is set and NO event is dispatched.
+     *
+     * A page that only acts on the events it happens to hear is at the mercy
+     * of how the text got there: a paste, an autofill, a password manager, a
+     * tool driving the browser. The rule is that the grid ends up agreeing
+     * with what the box says, so the next statement to land is the moment that
+     * gets put right. This is the check for that rule, and it cannot pass by
+     * accident: nothing here fires `input` or `change`.
+     */
+    await evaluate(`(() => {
       const d = window.__prescribingDemo;
-      d.controls.clearButton.click();
-      await new Promise((r) => setTimeout(r, 7000));
-      const before = d.mainGrid.rows.count();
-      d.controls.costFloor.value = '1000000';
-      d.controls.costFloor.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 11000));
+      d.controls.search.value = 'metformin';
+    })()`);
+    /* Something unrelated to nudge the page: changing the sort sends a
+       statement, and its completion is when the page catches up. */
+    await evaluate("window.__prescribingDemo.mainGrid.sort.set([{ col: 'items', dir: 'desc' }])");
+    await answered("LIKE '%metformin%'", 180000, 'the unseen search to be noticed and sent');
+    await quiet(180000, 'the unseen search');
+    const unseen = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       const rows = d.mainGrid.rows.data();
       return {
-        before,
+        count: d.mainGrid.rows.count(),
+        names: rows.map((r) => r.name),
+        applied: d.appliedQuick,
+        sql: (d.queries.find((q) => q.label === 'grid rows') || {}).sql,
+      };
+    })()`);
+    console.log(`  a search the page saw no event for: ${unseen.count} rows, applied "${unseen.applied}"`);
+    check(unseen.applied === 'metformin',
+      'a search typed while the page was busy is applied even with no event to hear',
+      `applied "${unseen.applied}"`);
+    check(/LIKE '%metformin%'/.test(unseen.sql || ''), 'and it reached the endpoint as a WHERE clause',
+      (unseen.sql || '').slice(0, 160));
+    check(unseen.count > 0 && unseen.names.every((name) => /metformin/i.test(name)),
+      'and every row that came back matches it', unseen.names.slice(0, 5).join(', '));
+
+    await evaluate(`(() => {
+      const d = window.__prescribingDemo;
+      d.controls.search.value = '';
+      d.controls.clearButton.click();
+      d.mainGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
+    })()`);
+    await quiet(180000, 'the clear after the unseen search');
+
+    /* ---- a threshold on a measure becomes a HAVING ---- */
+
+    await evaluate("window.__prescribingDemo.controls.clearButton.click()");
+    await quiet(180000, 'the clear');
+    const beforeThreshold = await evaluate('window.__prescribingDemo.mainGrid.rows.count()');
+    await evaluate(`(() => {
+      const d = window.__prescribingDemo;
+      d.controls.costFloor.value = '1000000';
+      d.controls.costFloor.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await answered('HAVING SUM(SAFE_CAST(ACTUAL_COST AS FLOAT64)) >= 1000000', 180000,
+      'the threshold to reach the endpoint and come back');
+    await quiet(180000, 'the threshold');
+    const thresholded = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
+      const rows = d.mainGrid.rows.data();
+      return {
         count: d.mainGrid.rows.count(),
         lowest: Math.min(...rows.map((r) => Number(r.cost))),
         sql: (d.queries.find((q) => q.label === 'grid rows') || {}).sql,
       };
     })()`);
+    thresholded.before = beforeThreshold;
     console.log(`  actual cost at least 1,000,000: ${thresholded.before} rows -> ${thresholded.count} rows`);
     check(/HAVING SUM\(SAFE_CAST\(ACTUAL_COST AS FLOAT64\)\) >= 1000000/.test(thresholded.sql || ''),
       'a threshold on a measure reached the endpoint as a HAVING, not a WHERE',
@@ -602,22 +724,25 @@ try {
 
     /* ---- sorting goes to the endpoint ---- */
 
-    const sorted = await evaluate(`(async () => {
+    await evaluate(`(() => {
       const d = window.__prescribingDemo;
-      d.controls.clearButton.click();
       d.controls.costFloor.value = '';
-      d.controls.costFloor.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 9000));
-      const before = (d.mainGrid.rows.data()[0] || {}).name;
-      d.mainGrid.sort.set([{ col: 'name', dir: 'asc' }]);
-      await new Promise((r) => setTimeout(r, 9000));
+      d.controls.clearButton.click();
+    })()`);
+    await quiet(180000, 'the clear before sorting');
+    const beforeSort = await evaluate('(window.__prescribingDemo.mainGrid.rows.data()[0] || {}).name');
+    await evaluate("window.__prescribingDemo.mainGrid.sort.set([{ col: 'name', dir: 'asc' }])");
+    await answered('ORDER BY BNF_CHEMICAL_SUBSTANCE ASC', 180000, 'the sort to reach the endpoint and come back');
+    await quiet(180000, 'the sort');
+    const sorted = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       return {
-        before,
         count: d.mainGrid.rows.count(),
         first: (d.mainGrid.rows.data()[0] || {}).name,
         sql: (d.queries.find((q) => q.label === 'grid rows') || {}).sql,
       };
     })()`);
+    sorted.before = beforeSort;
     console.log(`  sorting by name over ${sorted.count} rows: first row "${sorted.before}" -> "${sorted.first}"`);
     check(/ORDER BY BNF_CHEMICAL_SUBSTANCE ASC/.test(sorted.sql || ''),
       'sorting reached the endpoint as an ORDER BY', (sorted.sql || '').slice(-90));
@@ -626,13 +751,17 @@ try {
 
     /* ---- changing what a row is rewrites the GROUP BY ---- */
 
-    const regrouped = await evaluate(`(async () => {
+    await evaluate("window.__prescribingDemo.mainGrid.sort.set([{ col: 'cost', dir: 'desc' }])");
+    await quiet(180000, 'the sort back');
+    await evaluate(`(() => {
       const d = window.__prescribingDemo;
-      d.mainGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
-      await new Promise((r) => setTimeout(r, 6000));
       d.controls.levelPicker.value = 'icb';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 16000));
+    })()`);
+    await answered('SELECT ICB_NAME AS name', 180000, 'the care board level to come back');
+    await quiet(180000, 'the level change');
+    const regrouped = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       const rows = d.mainGrid.rows.data();
       return {
         level: d.view.level,
@@ -662,23 +791,32 @@ try {
 
     /* ---- scrolling asks for a second window ---- */
 
-    const paged = await evaluate(`(async () => {
+    await evaluate(`(() => {
       const d = window.__prescribingDemo;
       d.controls.levelPicker.value = 'practice';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 14000));
+    })()`);
+    await answered('SELECT PRACTICE_NAME AS name', 180000, 'the practice level to come back');
+    await quiet(180000, 'the practice level');
+    await evaluate(`(() => {
       const viewport = document.querySelector('.primary-host .lat-body-viewport');
-      const before = d.queries.length;
       viewport.scrollTop = 9000;
       viewport.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 12000));
+    })()`);
+    await waitFor(`(() => {
+      const q = window.__prescribingDemo.queries || [];
+      return q.some((e) => e.label === 'grid rows' && e.status === 'done' && !e.error
+        && !/OFFSET 0$/.test(String(e.sql)));
+    })()`, 180000, 'a later window to be asked for and come back');
+    await quiet(180000, 'the scroll');
+    const paged = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       const offsets = d.queries
         .filter((q) => q.label === 'grid rows')
         .map((q) => Number((String(q.sql).match(/OFFSET (\\d+)/) || [0, -1])[1]));
       return {
         count: d.mainGrid.rows.count(),
         offsets,
-        statements: d.queries.length - before,
         drawnIndex: (() => {
           const row = document.querySelector('.primary-host .lat-row[data-index]');
           return row ? Number(row.getAttribute('data-index')) : -1;
@@ -694,20 +832,33 @@ try {
 
     /* ---- changing the month changes the table ---- */
 
-    const monthChanged = await evaluate(`(async () => {
+    await evaluate(`(() => {
       const d = window.__prescribingDemo;
       d.controls.levelPicker.value = 'chapter';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 10000));
-      const before = { month: d.view.month, cost: (d.mainGrid.rows.data()[0] || {}).cost };
-      const options = [...d.controls.monthPicker.options].map((o) => o.value);
-      const other = options.find((m) => m !== d.view.month);
-      d.controls.monthPicker.value = other;
-      d.controls.monthPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 32000));
+    })()`);
+    await answered('SELECT BNF_CHAPTER_PLUS_CODE AS name', 180000, 'the chapter level to come back');
+    await quiet(180000, 'the chapter level');
+    const beforeMonth = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       return {
-        before,
-        months: options.length,
+        month: d.view.month,
+        cost: (d.mainGrid.rows.data()[0] || {}).cost,
+        months: [...d.controls.monthPicker.options].map((o) => o.value),
+      };
+    })()`);
+    const otherMonth = beforeMonth.months.find((m) => m !== beforeMonth.month);
+    await evaluate(`(() => {
+      const d = window.__prescribingDemo;
+      d.controls.monthPicker.value = ${JSON.stringify(otherMonth)};
+      d.controls.monthPicker.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await answered('FROM `' + EpdData.resourceFor(otherMonth) + '`', 240000,
+      'the other month to come back');
+    await quiet(240000, 'the month change');
+    const monthChanged = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
+      return {
         month: d.view.month,
         cost: (d.mainGrid.rows.data()[0] || {}).cost,
         sql: (d.queries.find((q) => q.label === 'grid rows') || {}).sql,
@@ -715,6 +866,8 @@ try {
         tiles: d.kpi.tiles().map((t) => ({ id: t.id, value: t.value })),
       };
     })()`);
+    monthChanged.before = { month: beforeMonth.month, cost: beforeMonth.cost };
+    monthChanged.months = beforeMonth.months.length;
     console.log(`  month ${monthChanged.before.month} -> ${monthChanged.month} (${monthChanged.months} offered)`);
     check(monthChanged.months >= 12, 'the month picker offers the months the dataset holds', `${monthChanged.months}`);
     check(monthChanged.month !== monthChanged.before.month, 'the month changed', monthChanged.month);
@@ -741,19 +894,28 @@ try {
      * slow answer is guaranteed to arrive after the fast one, and the totals
      * row must still describe the grid a reader is looking at.
      */
-    const raced = await evaluate(`(async () => {
+    /* Settle on substances first, so this month's substance totals are in the
+       session's memory and the second answer below is instant. */
+    await evaluate(`(() => {
       const d = window.__prescribingDemo;
-      /* Settle on substances first, so this month's substance totals are in
-         the session's memory and the second answer below is instant. */
       d.controls.levelPicker.value = 'substance';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 16000));
+    })()`);
+    await quiet(240000, 'the return to substances');
+    /* Now the race itself, in one tick each way. */
+    await evaluate(`(async () => {
+      const d = window.__prescribingDemo;
       d.controls.levelPicker.value = 'practice';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 300));
       d.controls.levelPicker.value = 'substance';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 30000));
+    })()`);
+    /* Wait for everything, including the slow answer for the level that was
+       left: the point is that it lands and changes nothing. */
+    await quiet(240000, 'the raced level change');
+    const raced = await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       return {
         level: d.view.level,
         month: d.view.month,
@@ -778,22 +940,26 @@ try {
 
     /* ---- back to where the screenshot should be taken ---- */
 
-    await evaluate(`(async () => {
+    await evaluate(`(() => {
       const d = window.__prescribingDemo;
       d.controls.monthPicker.value = ${JSON.stringify(live.month)};
       d.controls.monthPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 18000));
+    })()`);
+    await quiet(240000, 'the month going back');
+    await evaluate(`(() => {
+      const d = window.__prescribingDemo;
       d.controls.levelPicker.value = 'substance';
       d.controls.levelPicker.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 12000));
       d.mainGrid.sort.set([{ col: 'cost', dir: 'desc' }]);
-      await new Promise((r) => setTimeout(r, 8000));
+    })()`);
+    await quiet(240000, 'the return to the opening view');
+    await evaluate(`(() => {
       /* Back to the top, so the screenshot shows the grid as a reader meets it
          rather than where the paging check left it. */
       const viewport = document.querySelector('.primary-host .lat-body-viewport');
       if (viewport) { viewport.scrollTop = 0; viewport.dispatchEvent(new Event('scroll', { bubbles: true })); }
-      await new Promise((r) => setTimeout(r, 4000));
     })()`);
+    await quiet(240000, 'the scroll back to the top');
 
     const settled = await evaluate(READ);
 
@@ -880,15 +1046,15 @@ try {
         };
       };
       d.tabs.activate('boards');
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((r) => setTimeout(r, 2500));
       const boards = shapeOf(d.charts.boards);
       const boardBars = document.querySelectorAll('.chart-box rect.lat-chartview__bar, .chart-box svg rect').length;
       d.tabs.activate('trend');
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((r) => setTimeout(r, 2500));
       const trend = shapeOf(d.charts.trend);
       const trendLines = d.charts.trend.element.querySelectorAll('path.lat-chartview__line').length;
       d.tabs.activate('chapters');
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((r) => setTimeout(r, 2500));
       const chapters = shapeOf(d.charts.chapters);
       return { boards, boardBars, trend, trendLines, chapters, trendRows: d.trendGrid.rows.count() };
     })()`);
