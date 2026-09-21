@@ -1,0 +1,65 @@
+name: Refresh the saved copy
+
+on:
+  schedule:
+    # Nightly. NHSBSA publish a month at a time rather than daily, so most
+    # runs will find nothing changed and commit nothing; the point is that the
+    # first page paint is never more than a day behind a new month.
+    - cron: '20 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  # Needed by the last step: a push made with GITHUB_TOKEN never starts another
+  # workflow, so this one has to ask for the publish itself.
+  actions: write
+
+# One refresh at a time. A run already under way is left to finish, so two
+# builds never race to commit the same files.
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the demo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No key, and nothing to install: the endpoint is public and the build
+      # uses nothing but the Node that is already here.
+      - name: Rebuild the saved copy from the endpoint
+        run: node tools/build-snapshot.mjs
+
+      - name: Commit it, if anything changed
+        id: commit
+        run: |
+          if git diff --quiet -- data/snapshot; then
+            echo "The saved copy is unchanged."
+            echo 'committed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name 'prescribing-refresh[bot]'
+          git config user.email 'prescribing-refresh[bot]@users.noreply.github.com'
+          git add data/snapshot
+          git commit -m "Refresh the saved prescribing copy"
+          git push
+          echo 'committed=true' >> "$GITHUB_OUTPUT"
+
+      # A push made with GITHUB_TOKEN deliberately does not trigger other
+      # workflows, which is GitHub's loop guard rather than a setting, so the
+      # commit above would leave a published page serving yesterday's copy
+      # until something asked for a publish. This is that ask. It is skipped
+      # while the publish workflow is on demand only, which it is while this
+      # repository is private.
+      - name: Publish the new copy
+        if: steps.commit.outputs.committed == 'true' && github.event.repository.private == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

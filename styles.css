@@ -1,0 +1,507 @@
+/* The page around the grid. The grid brings its own stylesheet. */
+
+:root {
+  --ink: #101828;
+  --ink-soft: #475467;
+  --line: #e4e7ec;
+  --page: #f7f8fa;
+  --panel: #ffffff;
+  --accent: #005eb8; /* NHS blue, for a page about NHS data. */
+  --live: #1b8a3f;
+  --alarm: #b42318;
+  --code: #0f2b46;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 14px/1.5 "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100vh;
+  padding: 16px 20px 12px;
+}
+
+/* The masthead */
+
+.head {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.head h1 {
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 3px;
+}
+
+.lede {
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 88ch;
+}
+
+.head-note {
+  align-items: center;
+  color: var(--ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 10px;
+  /* The provenance line carries a whole sentence about where the data came
+     from and how long the last query took. Left unbreakable it sets the width
+     of the masthead, and on a phone that one line pushes the page sideways. */
+  min-width: 0;
+}
+
+.pill {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  text-transform: uppercase;
+}
+
+.freshness {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.freshness.failed {
+  color: var(--alarm);
+  font-weight: 600;
+}
+
+/* Said when the endpoint could not answer and the last good result stands. */
+.notice {
+  background: #fdf3e3;
+  border: 1px solid #f0d9a8;
+  border-radius: 7px;
+  color: #6b4d12;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+/* The controls */
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.actions-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin-right: 2px;
+}
+
+.action {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  max-width: 100%;
+  padding: 4px 11px;
+}
+
+.action:hover {
+  background: #eef2f7;
+  border-color: #c7d2e0;
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/*
+ * A control that has nothing to ask yet. Every one of them sends a statement,
+ * so until the endpoint has answered once there is nothing for them to do, and
+ * a control that looks live and does nothing is worse than one that looks off.
+ */
+.action:disabled {
+  background: #f2f4f7;
+  color: #98a2b3;
+  cursor: default;
+}
+
+.actions.waiting .actions-label {
+  color: #98a2b3;
+}
+
+.search-input {
+  cursor: text;
+  min-width: 0;
+  width: 190px;
+}
+
+.cost-input {
+  cursor: text;
+  min-width: 0;
+  width: 108px;
+}
+
+/* The tiles */
+
+.kpi-host {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kpi-strip {
+  display: block;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/*
+ * The tiles' own card. The KPI module draws each tile with the grid theme's
+ * variables; naming this page's panel colours here is what makes a tile a
+ * white card on the grey background. A stated height, not a minimum, so a row
+ * of tiles is the same height whether or not a tile has a movement line.
+ */
+.kpi-strip .lat-kpi__tile {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  height: 104px;
+  padding: 10px 12px;
+}
+
+/*
+ * A compact figure is short by construction and the tiles are sized so it
+ * fits. Saying so here as well means a figure is never quietly replaced by an
+ * ellipsis if a locale renders one wider than expected.
+ */
+.kpi-strip .lat-kpi__value {
+  font-size: 1.35em;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.panel-caption {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin: 0;
+}
+
+/* The main grid */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  height: 460px;
+  overflow: hidden;
+  padding: 10px 12px 12px;
+}
+
+.grid-pane {
+  flex: 1;
+  min-height: 0;
+}
+
+/* A grid that is a data path rather than a view is never mounted. */
+.hidden-grid {
+  display: none;
+}
+
+/*
+ * A two line column heading: the name, and under it the unit the numbers are
+ * in. A reader comparing a cost with a count needs to be told which is which
+ * where the numbers are.
+ */
+.col-head {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.col-head-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-head-sub {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The query panel: the statements, as they were sent */
+
+.query-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow: hidden;
+  padding: 10px 12px 12px;
+}
+
+.query-title {
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.query-log {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.query-entry {
+  border-top: 1px solid var(--line);
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.query-meta {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.query-label {
+  font-weight: 650;
+}
+
+.query-source,
+.query-ms {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.query-error {
+  color: var(--alarm);
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+
+/*
+ * The statement itself. It has to wrap: a hundred and eighty characters of
+ * SQL that will not break is a page that scrolls sideways on every screen.
+ */
+.query-sql {
+  background: #f2f5f9;
+  border-radius: 6px;
+  color: var(--code);
+  font: 12px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  margin: 4px 0 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 9px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.query-empty {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+/* The charts, in tabs */
+
+#app .tabs-host {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  height: 470px;
+  overflow: hidden;
+  padding: 10px 12px 12px;
+}
+
+/*
+ * The tabs module lays its panels out absolutely inside a relative container,
+ * which is how a hidden tab costs nothing. That makes each panel exactly as
+ * tall as the strip, so a panel taller than that scrolls inside itself rather
+ * than pushing the page sideways.
+ */
+.tabs-host .lat-tabs__panel {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.chart-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-width: 0;
+}
+
+.chart-box {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.chart-box.tall {
+  flex: 1 1 auto;
+  min-height: 300px;
+}
+
+/* Waiting and failure */
+
+.loading {
+  margin: auto;
+  max-width: 480px;
+  text-align: center;
+}
+
+.loading h1 {
+  color: var(--accent);
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+
+.loading-message {
+  color: var(--ink-soft);
+  margin: 0 0 14px;
+}
+
+.loading-bar {
+  background: var(--line);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.loading-fill {
+  background: var(--accent);
+  height: 100%;
+  transition: width 0.2s ease;
+  width: 0;
+}
+
+/* The credit line */
+
+.foot {
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding-top: 10px;
+}
+
+.foot p {
+  margin: 0 0 2px;
+}
+
+.foot a {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* One column on a phone                                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Below this width the page stops being a dashboard laid out across and
+ * becomes a single column read down. Nothing is allowed to set a width the
+ * screen has to scroll to reach.
+ *
+ * The KPI panel sizes its own tracks from `--lat-kpi-tile-min`, which
+ * `columns: 4` sets as an inline style on the panel; `!important` is what lets
+ * a stylesheet have the last word over that inline value, so the four columns
+ * asked for on a desktop become one here rather than four tiles too narrow to
+ * read.
+ */
+@media (max-width: 640px) {
+  #app {
+    padding: 12px 12px 10px;
+  }
+
+  .head h1 {
+    font-size: 19px;
+  }
+
+  .panel {
+    height: 400px;
+  }
+
+  #app .tabs-host {
+    height: 460px;
+  }
+
+  .query-panel {
+    max-height: 300px;
+  }
+
+  .search-input,
+  .cost-input {
+    width: 100%;
+  }
+
+  .kpi-strip.lat-kpi {
+    --lat-kpi-tile-min: 100% !important;
+  }
+}

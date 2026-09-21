@@ -1,0 +1,64 @@
+name: Publish the demo
+
+# On demand only, for now. This repository is private, and GitHub Pages cannot
+# serve a private one, so a publish wired to every push would fail on every
+# push. Add `push: { branches: [main] }` back when the demo is made public.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One publish at a time. A run already under way is left to finish, so a
+# half-uploaded site is never what ends up live.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the demo
+        uses: actions/checkout@v4
+
+      # Node is only needed for the browser check below. The page itself loads
+      # the grid from jsDelivr by script tag, so there is nothing to install
+      # and the checked-out tree is exactly what gets published.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The offline mode first, because it needs nothing but the repository:
+      # if this fails, the demo itself is broken rather than the endpoint.
+      - name: Check the page works with the endpoint unreachable
+        env:
+          OFFLINE: '1'
+        run: node tools/verify.mjs
+
+      - name: Check the page works against the live endpoint
+        run: node tools/verify.mjs
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Package the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

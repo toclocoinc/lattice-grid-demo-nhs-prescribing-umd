@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>What England prescribes, live</title>
+    <meta
+      name="description"
+      content="Every prescription item dispensed in England, around eighteen million rows a month, queried live in the browser. The grid turns its own scrolling, sorting, searching and filtering into SQL and sends it to the NHS open data endpoint. Built with Lattice Grid loaded by script tag, with no install and no build."
+    />
+    <link rel="icon" href="data:," />
+    <!--
+      The grid's stylesheet, from jsDelivr. Every address on this page names
+      the exact release, 1.66.0, and carries the hash of the file it expects,
+      so the page can never quietly pick up a different build than the one it
+      was checked against.
+    -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@1.66.0/lattice-grid.min.css"
+      integrity="sha384-mcpd7S8C5nz58bZDAXdYH6rzezEhfN7B4u2SlW426dSe20GnkxTu4TygyOILnCth"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <div class="loading">
+        <h1>What England prescribes, live</h1>
+        <p class="loading-message">Starting...</p>
+      </div>
+    </main>
+
+    <!--
+      The library, as classic script tags. No npm install, no bundler, no
+      `type="module"`: each file runs as it arrives and leaves a global behind.
+
+        lattice-grid.min.js          LatticeGrid            the grid itself
+        modules/charts.min.js        LatticeGrid.createChart  (extends the core, so it must follow it)
+        modules/data-router.min.js   LatticeGridDataRouter
+        modules/kpi.min.js           LatticeGridKPI
+        modules/tabs.min.js          LatticeGridTabs
+
+      The order matters once: the charts module folds itself into the core
+      global rather than defining its own, so the core has to be there first.
+      The other three are self-contained and could go in any order.
+    -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@1.66.0/lattice-grid.min.js"
+      integrity="sha384-Aju8UA+WHJD3w/36Zb1VCIZcyVLFnX6ZZMwwnRWb51f5P8xWwmovkcQ8wQ2VpVov"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@1.66.0/modules/charts.min.js"
+      integrity="sha384-reJRFkovEq1l2jj11yOvfVQmyctdO5aGenHAi0MAcEqofD8i42rnPFg0GosTNUAC"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@1.66.0/modules/data-router.min.js"
+      integrity="sha384-/yBvMeZTBRteT9VTlvd5VnDslniWNzOWCqfDGEvToW5sERxx86hZwMxxgbpbo9dM"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@1.66.0/modules/kpi.min.js"
+      integrity="sha384-AaOjXC8+kQFGNkr6FHc/dJEzOsy/1IMKDGhIXtAuWJBf/IJsqPISnGWMMkD8L1aj"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@1.66.0/modules/tabs.min.js"
+      integrity="sha384-JxrbTsLQ5Nc8uWLIFGXQpmjudTaFc9PQmSwktEDkgSMh9uPmEw/+CGouPjYMv/KN"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- The demo's own code, in the order each file needs the one before it. -->
+    <script src="./src/licence.js"></script>
+    <script src="./src/epd-data.js"></script>
+    <script src="./src/epd-source.js"></script>
+    <script src="./src/dashboard.js"></script>
+    <script src="./main.js"></script>
+  </body>
+</html>
