@@ -1,5 +1,5 @@
 {
- "builtAt": "2026-10-03T09:55:57.054Z",
+ "builtAt": "2026-10-04T10:39:28.486Z",
  "endpoint": "https://opendata.nhsbsa.net/api/3/action/datastore_search_sql",
  "dataset": "english-prescribing-dataset-epd-with-snomed-code",
  "latest": "2026-07",
@@ -62,8 +62,8 @@
  "substancesInLatestMonth": 1623,
  "totals": {
   "items": 113369726,
-  "cost": 1000555532.1547463,
-  "quantity": 9023977799.96,
+  "cost": 1000555532.154747,
+  "quantity": 9023977799.960003,
   "practices": 9284,
   "prescriptions": 18601776
  },
@@ -80,5 +80,5 @@
   "icbs": 37,
   "trend": 24
  },
- "trendMs": 1502
+ "trendMs": 9719
 }
