@@ -32,15 +32,33 @@ jobs:
         with:
           node-version: '22'
 
-      # The offline mode first, because it needs nothing but the repository:
-      # if this fails, the demo itself is broken rather than the endpoint.
+      # The offline check is the gate: it needs nothing but the repository,
+      # so a run is never red because somebody else's service is down. This
+      # is the full offline suite, the saved copy, the fallback and the
+      # blocked-endpoint handling, run unweakened.
       - name: Check the page works with the endpoint unreachable
         env:
           OFFLINE: '1'
         run: node tools/verify.mjs
 
+      # Informational only: the live NHSBSA endpoint is outside this repo's
+      # control and has been intermittent from GitHub's runners, so its
+      # failure must not block a deploy the offline gate above has already
+      # passed. continue-on-error keeps the job green either way; the next
+      # step leaves a visible note of what happened.
       - name: Check the page works against the live endpoint
+        id: live_check
+        continue-on-error: true
         run: node tools/verify.mjs
+
+      - name: Note the live endpoint check's result
+        if: always()
+        run: |
+          if [ "${{ steps.live_check.outcome }}" = "success" ]; then
+            echo "Live endpoint check: passed." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::The live NHSBSA endpoint check did not pass (outcome: ${{ steps.live_check.outcome }}). This does not block the deploy, which is gated on the offline check above; see the 'Check the page works against the live endpoint' step's log for details." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
