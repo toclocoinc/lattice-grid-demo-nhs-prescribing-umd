@@ -6,7 +6,7 @@ Business Services Authority open data endpoint: scrolling is `LIMIT` and `OFFSET
 sort arrows are `ORDER BY`, the search box is a `WHERE`, a threshold on a measure is a
 `HAVING`, and the totals under the grid are their own query. Nothing is downloaded first.
 
-Built with [Lattice Grid](https://latticegrid.dev) loaded from a CDN by plain
+Built with [Lattice Grid](https://www.latticegrid.dev) loaded from a CDN by plain
 `<script>` tags. No npm install, no bundler, no build step, no TypeScript. Open
 `index.html` and it runs.
 

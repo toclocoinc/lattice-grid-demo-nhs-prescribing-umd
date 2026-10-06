@@ -72,7 +72,7 @@ const OFFLINE = process.env.OFFLINE === '1';
 const THROTTLE = Number(process.env.THROTTLE || 0);
 
 /** The release every library tag must name, and the globals each file leaves. */
-const GRID_VERSION = '1.66.0';
+const GRID_VERSION = '1.87.0';
 const CDN_BASE = `https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@${GRID_VERSION}/`;
 const LIBRARY_TAGS = [
   { file: 'lattice-grid.min.js', global: 'LatticeGrid', member: 'createGrid' },

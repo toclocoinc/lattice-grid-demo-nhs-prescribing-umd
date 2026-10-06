@@ -1282,7 +1282,11 @@
     portal.append('The dataset: ', portalLink, '. The endpoint is keyless and answers cross-origin requests, '
       + 'which is what lets this page query it from your browser.');
     foot.append(portal);
-    foot.append(el('p', null, 'Built with Lattice Grid, loaded from a CDN by script tag.'));
+    const builtWith = el('p');
+    const gridLink = el('a', null, 'Lattice Grid');
+    gridLink.href = 'https://www.latticegrid.dev/charts/';
+    builtWith.append('Built with ', gridLink, ', loaded from a CDN by script tag.');
+    foot.append(builtWith);
     host.append(foot);
 
     /* Going live is deliberately not awaited: the page is already drawn and
