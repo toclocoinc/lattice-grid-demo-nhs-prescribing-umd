@@ -50,7 +50,7 @@ most recent twenty four.
 
 ## The endpoint, as measured
 
-Measured against the live service on 21 September 2026 from a UK connection. Every
+Measured against the live service on 6 October 2026 from a UK connection. Every
 number the page relies on is one of these, and the page falls back rather than assumes
 when one of them stops being true.
 
@@ -58,7 +58,7 @@ when one of them stops being true.
 | --- | --- |
 | Base | `https://opendata.nhsbsa.net/api/3/action/datastore_search_sql` |
 | Key | none |
-| CORS | `access-control-allow-origin: *` on `datastore_search_sql` and on `package_show` |
+| CORS | `access-control-allow-origin: *` on `datastore_search_sql` and on `package_search`. `package_show` stopped sending it on or around 4 October 2026, so the page asks `package_search?fq=name:<dataset>&rows=1` instead, which answers with the identical resource list |
 | Table name in the SQL | the resource **name** in backticks, e.g. `` `EPD_SNOMED_202607` ``; the same name again as `resource_id`. A resource UUID in `resource_id` is answered 404 |
 | Result shape | `{"success":true,"result":{"result":{"records":[...]}}}`, note the nested `result` |
 | Rows in July 2026 | 18,601,776 |

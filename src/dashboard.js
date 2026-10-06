@@ -1056,12 +1056,27 @@
     }
 
 
-    /** Read the months the dataset holds now, rather than when it was saved. */
+    /**
+     * Read the months the dataset holds now, rather than when it was saved.
+     *
+     * `package_show` is the documented way to ask CKAN for a dataset's
+     * resources, but it answers a browser with no
+     * `access-control-allow-origin`, so a page calling it directly is refused
+     * by the browser itself rather than by the publisher's server.
+     * `package_search`, asked for this one package by its exact name, returns
+     * the identical resource list and does send that header, so it is what
+     * the page asks instead.
+     */
     async function refreshMonths() {
-      const response = await fetch(D.API + '/package_show?id=' + D.DATASET, { cache: 'no-store' });
-      if (!response.ok) throw new Error('the dataset listing answered HTTP ' + response.status);
+      const response = await fetch(
+        D.API + '/package_search?fq=name:' + encodeURIComponent(D.DATASET) + '&rows=1',
+        { cache: 'no-store' },
+      );
+      if (!response.ok) throw new Error('the dataset search answered HTTP ' + response.status);
       const body = await response.json();
-      const names = (body.result.resources || [])
+      const pkg = body.result && body.result.results && body.result.results[0];
+      if (!pkg) throw new Error('the dataset search found no package named ' + D.DATASET);
+      const names = (pkg.resources || [])
         .map((resource) => resource.name)
         .filter((name) => /^EPD_SNOMED_\d{6}$/.test(name))
         .sort()
