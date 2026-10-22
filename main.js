@@ -3,7 +3,7 @@
  * let the dashboard go live.
  *
  * This is the script-tag edition. The grid and its modules arrived as classic
- * `<script src>` tags from jsDelivr, ahead of this file, and left globals
+ * `<script src>` tags from the Lattice Grid CDN, ahead of this file, and left globals
  * behind: `LatticeGrid` (the core, which the charts module extends),
  * `LatticeGridDataRouter`, `LatticeGridKPI` and `LatticeGridTabs`. This file
  * picks the factories off those globals and hands them to the dashboard, which

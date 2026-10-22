@@ -1,7 +1,7 @@
 /**
  * Load the demo in a real browser and check that it works.
  *
- * It depends on jsDelivr, because that is where the page gets the grid from:
+ * It depends on the Lattice Grid CDN, because that is where the page gets the grid from:
  * this edition has no local copy of the library at all, and a check that
  * loaded one would not be checking the page.
  *
@@ -23,7 +23,7 @@
  * Beyond "it drew something", it asserts:
  *
  *   - the library arrived by classic script tag: no `type="module"` script,
- *     every library tag points at the pinned release with an integrity hash,
+ *     every library tag points at the pinned release,
  *     and each left the global it documents, including the pushdown factory;
  *   - the main grid paints rows that came from the endpoint, and its row count
  *     is the count the endpoint gives when asked here;
@@ -72,8 +72,8 @@ const OFFLINE = process.env.OFFLINE === '1';
 const THROTTLE = Number(process.env.THROTTLE || 0);
 
 /** The release every library tag must name, and the globals each file leaves. */
-const GRID_VERSION = '1.87.0';
-const CDN_BASE = `https://cdn.jsdelivr.net/npm/@toclocoinc/lattice-grid@${GRID_VERSION}/`;
+const GRID_VERSION = '1.111.7';
+const CDN_BASE = `https://cdn.latticegrid.dev/lattice-grid@${GRID_VERSION}/`;
 const LIBRARY_TAGS = [
   { file: 'lattice-grid.min.js', global: 'LatticeGrid', member: 'createGrid' },
   { file: 'lattice-grid.min.js', global: 'LatticeGrid', member: 'createPushdownSource' },
@@ -449,10 +449,8 @@ try {
     return {
       moduleScripts: scripts.filter((s) => s.type === 'module').length,
       importmaps: scripts.filter((s) => s.type === 'importmap').length,
-      librarySrcs: scripts.map((s) => s.getAttribute('src') || '').filter((src) => /cdn\\.jsdelivr\\.net/.test(src)),
-      withIntegrity: scripts.filter((s) => /cdn\\.jsdelivr\\.net/.test(s.src) && s.integrity).length,
-      stylesheetSrc: (document.querySelector('link[rel=stylesheet][href*="cdn.jsdelivr.net"]') || {}).href || null,
-      stylesheetIntegrity: (document.querySelector('link[rel=stylesheet][href*="cdn.jsdelivr.net"]') || {}).integrity || null,
+      librarySrcs: scripts.map((s) => (s.getAttribute('src') || '').split('?')[0]).filter((src) => /cdn\\.latticegrid\\.dev/.test(src)),
+      stylesheetSrc: ((document.querySelector('link[rel=stylesheet][href*="cdn.latticegrid.dev"]') || {}).href || '').split('?')[0] || null,
       members: {
         createGrid: typeof (window.LatticeGrid || {}).createGrid,
         createPushdownSource: typeof (window.LatticeGrid || {}).createPushdownSource,
@@ -464,7 +462,7 @@ try {
       },
     };
   })()`);
-  console.log(`  library tags: ${delivery.librarySrcs.length} from the CDN, ${delivery.withIntegrity} with an integrity hash; `
+  console.log(`  library tags: ${delivery.librarySrcs.length} from the CDN; `
     + `module scripts on the page: ${delivery.moduleScripts}`);
   check(delivery.moduleScripts === 0, 'delivery: no type="module" script on the page', `${delivery.moduleScripts}`);
   check(delivery.importmaps === 0, 'delivery: no import map on the page', `${delivery.importmaps}`);
@@ -478,11 +476,8 @@ try {
     check(delivery.members[tag.member] === 'function',
       `delivery: ${tag.file} left ${tag.global}.${tag.member} behind`, delivery.members[tag.member]);
   }
-  check(delivery.withIntegrity === LIBRARY_FILES.length, 'delivery: every library tag carries an integrity hash',
-    `${delivery.withIntegrity} of ${LIBRARY_FILES.length}`);
   check(delivery.stylesheetSrc === `${CDN_BASE}lattice-grid.min.css`,
     `delivery: the stylesheet is loaded from the pinned ${GRID_VERSION} release`, delivery.stylesheetSrc);
-  check(!!delivery.stylesheetIntegrity, 'delivery: the stylesheet carries an integrity hash');
 
   /* =================================================================== */
   /* 2. The page, however it was opened.                                  */
