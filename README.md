@@ -220,7 +220,7 @@ and seven queries, and writes `data/snapshot`. No key, about 20 s, around 68 KB.
 
 | File | What it is |
 | --- | --- |
-| `index.html` | The six pinned CDN tags, and the demo's four scripts |
+| `index.html` | The grid stylesheet and five scripts from the CDN, with the release named once in `GRID_BASE`, and the demo's own scripts |
 | `src/epd-data.js` | What the data is, and every line of SQL the page can write. It never fetches |
 | `src/epd-source.js` | The endpoint client and the pushdown adapter. It never writes SQL |
 | `src/dashboard.js` | The page: controls, grid, tiles, charts, query panel |

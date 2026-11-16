@@ -10,14 +10,17 @@
     />
     <link rel="icon" href="data:," />
     <!--
-      The grid's stylesheet, from the Lattice Grid CDN. Every address on this
-      page names the exact release, 1.111.7, so the page can never quietly pick
-      up a different build than the one it was checked against.
+      The grid's stylesheet and scripts come from the Lattice Grid CDN, and every
+      address names an exact release so the page never quietly picks up a
+      different build. The release is set once, here.
     -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.latticegrid.dev/lattice-grid@1.111.7/lattice-grid.min.css?v=20261022"
-    />
+    <script>
+      var GRID_BASE = 'https://cdn.latticegrid.dev/lattice-grid@1.123.3/';
+      var GRID_STAMP = '20261116';
+      document.write(
+        '<link rel="stylesheet" href="' + GRID_BASE + 'lattice-grid.min.css?v=' + GRID_STAMP + '" />',
+      );
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -42,21 +45,13 @@
       global rather than defining its own, so the core has to be there first.
       The other three are self-contained and could go in any order.
     -->
-    <script
-      src="https://cdn.latticegrid.dev/lattice-grid@1.111.7/lattice-grid.min.js?v=20261022"
-    ></script>
-    <script
-      src="https://cdn.latticegrid.dev/lattice-grid@1.111.7/modules/charts.min.js?v=20261022"
-    ></script>
-    <script
-      src="https://cdn.latticegrid.dev/lattice-grid@1.111.7/modules/data-router.min.js?v=20261022"
-    ></script>
-    <script
-      src="https://cdn.latticegrid.dev/lattice-grid@1.111.7/modules/kpi.min.js?v=20261022"
-    ></script>
-    <script
-      src="https://cdn.latticegrid.dev/lattice-grid@1.111.7/modules/tabs.min.js?v=20261022"
-    ></script>
+    <script>
+      ['lattice-grid.min.js', 'modules/charts.min.js', 'modules/data-router.min.js', 'modules/kpi.min.js', 'modules/tabs.min.js'].forEach(
+        function (file) {
+          document.write('<script src="' + GRID_BASE + file + '?v=' + GRID_STAMP + '"><\/script>');
+        },
+      );
+    </script>
 
     <!-- The demo's own code, in the order each file needs the one before it. -->
     <script src="./src/licence.js"></script>
