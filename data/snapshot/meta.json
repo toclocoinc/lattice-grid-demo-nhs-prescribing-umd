@@ -1,10 +1,11 @@
 {
- "builtAt": "2026-11-19T13:29:14.210Z",
+ "builtAt": "2026-11-20T13:10:33.278Z",
  "endpoint": "https://opendata.nhsbsa.net/api/3/action/datastore_search_sql",
  "dataset": "english-prescribing-dataset-epd-with-snomed-code",
- "latest": "2026-08",
- "yearAgo": "2025-08",
+ "latest": "2026-09",
+ "yearAgo": "2025-09",
  "months": [
+  "2026-09",
   "2026-08",
   "2026-07",
   "2026-06",
@@ -27,11 +28,11 @@
   "2025-01",
   "2024-12",
   "2024-11",
-  "2024-10",
-  "2024-09"
+  "2024-10"
  ],
- "monthsAvailable": 70,
+ "monthsAvailable": 71,
  "schemaMap": {
+  "2026-09": "current",
   "2026-08": "current",
   "2026-07": "current",
   "2026-06": "current",
@@ -54,25 +55,24 @@
   "2025-01": "legacy",
   "2024-12": "legacy",
   "2024-11": "legacy",
-  "2024-10": "legacy",
-  "2024-09": "legacy"
+  "2024-10": "legacy"
  },
  "defaultSubstance": "Atorvastatin",
- "rowsInLatestMonth": 17754211,
- "substancesInLatestMonth": 1628,
+ "rowsInLatestMonth": 18395376,
+ "substancesInLatestMonth": 1637,
  "totals": {
-  "items": 102050994,
-  "cost": 904525399.9218656,
-  "quantity": 8091738401.360004,
-  "practices": 9254,
-  "prescriptions": 17754211
+  "items": 110562925,
+  "cost": 999891865.68294,
+  "quantity": 8778983306.460001,
+  "practices": 9308,
+  "prescriptions": 18395376
  },
  "yearAgoTotals": {
-  "items": 100846701,
-  "cost": 833487246.8529742,
-  "quantity": 8067831568.100002,
-  "practices": 9215,
-  "prescriptions": 17796453
+  "items": 106522119,
+  "cost": 915878325.8788029,
+  "quantity": 8525988715.300003,
+  "practices": 9258,
+  "prescriptions": 18285462
  },
  "counts": {
   "substances": 500,
@@ -80,5 +80,5 @@
   "icbs": 37,
   "trend": 24
  },
- "trendMs": 3531
+ "trendMs": 3529
 }
