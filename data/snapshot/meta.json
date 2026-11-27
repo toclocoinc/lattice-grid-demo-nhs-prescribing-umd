@@ -1,5 +1,5 @@
 {
- "builtAt": "2026-11-26T14:00:41.773Z",
+ "builtAt": "2026-11-27T13:59:38.095Z",
  "endpoint": "https://opendata.nhsbsa.net/api/3/action/datastore_search_sql",
  "dataset": "english-prescribing-dataset-epd-with-snomed-code",
  "latest": "2026-09",
@@ -80,5 +80,5 @@
   "icbs": 37,
   "trend": 24
  },
- "trendMs": 1260
+ "trendMs": 1415
 }
